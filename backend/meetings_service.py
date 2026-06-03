@@ -134,7 +134,8 @@ class MeetingsService:
     async def sync_meetings(self, lookback_days: int = 90) -> Dict[str, Any]:
         """
         Sync meetings from Attio and Fireflies
-        - Fetches meetings from last N days
+        - Fetches meetings from last N days  
+        - Prioritizes latest data (sorted by date desc)
         - Deduplicates and merges
         - Stores in MongoDB
         """
@@ -149,56 +150,70 @@ class MeetingsService:
                 upsert=True
             )
             
-            # Calculate date range
+            # Calculate date range - prioritize latest
             end_date = datetime.now(self.timezone)
             start_date = end_date - timedelta(days=lookback_days)
             
-            # Fetch from Attio
-            print(f"Fetching Attio meetings from {start_date} to {end_date}")
+            print(f"🔄 Syncing meetings from {start_date.date()} to {end_date.date()}")
+            
+            # === FETCH FROM ATTIO ===
+            print("📞 Fetching Attio meetings...")
             attio_meetings = []
-            offset = 0
-            has_more = True
-            
-            while has_more:
-                result = await self.attio.search_meetings(
-                    starts_after=start_date.isoformat(),
-                    starts_before=end_date.isoformat(),
-                    limit=100,
-                    offset=offset
-                )
-                meetings_data = result.get("data", [])
-                attio_meetings.extend(meetings_data)
-                has_more = result.get("has_more", False)
-                offset += 100
-                
-                if not has_more or len(meetings_data) == 0:
-                    break
-            
-            print(f"Fetched {len(attio_meetings)} Attio meetings")
-            
-            # Fetch from Fireflies
-            print("Fetching Fireflies transcripts")
-            fireflies_transcripts = []
-            skip = 0
-            batch_size = 100
+            cursor = None
             
             while True:
-                batch = await self.fireflies.get_transcripts(limit=batch_size, skip=skip)
+                result = await self.attio.list_meetings(limit=200, cursor=cursor)
+                meetings_data = result.get("data", [])
+                
+                if not meetings_data:
+                    break
+                
+                # Filter by date and get call recordings
+                for meeting in meetings_data:
+                    # Get call recordings for this meeting
+                    meeting_id = meeting.get("id", {}).get("meeting_id")
+                    if meeting_id:
+                        recordings_result = await self.attio.list_call_recordings(meeting_id, limit=10)
+                        meeting["call_recordings"] = recordings_result.get("data", [])
+                        attio_meetings.append(meeting)
+                
+                cursor = result.get("next_cursor")
+                if not cursor:
+                    break
+            
+            print(f"✅ Fetched {len(attio_meetings)} Attio meetings")
+            
+            # === FETCH FROM FIREFLIES ===
+            print("🔥 Fetching Fireflies transcripts...")
+            fireflies_transcripts = []
+            skip = 0
+            batch_size = 50  # API limit
+            
+            while True:
+                batch = await self.fireflies.get_transcripts(
+                    limit=batch_size,
+                    skip=skip,
+                    from_date=start_date.isoformat(),
+                    to_date=end_date.isoformat()
+                )
+                
                 if not batch:
                     break
                 
-                # Filter by date range
-                for transcript in batch:
-                    if transcript.get("date"):
-                        transcript_date = parser.parse(transcript["date"])
-                        if start_date <= transcript_date <= end_date:
-                            fireflies_transcripts.append(transcript)
+                fireflies_transcripts.extend(batch)
                 
                 if len(batch) < batch_size:
                     break
+                
                 skip += batch_size
             
-            print(f"Fetched {len(fireflies_transcripts)} Fireflies transcripts")
+            # Sort by date descending (prioritize latest)
+            fireflies_transcripts.sort(
+                key=lambda x: x.get('date', ''), 
+                reverse=True
+            )
+            
+            print(f"✅ Fetched {len(fireflies_transcripts)} Fireflies transcripts")
             
             # Process and deduplicate
             processed_attio = []

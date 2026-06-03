@@ -17,13 +17,36 @@ class FirefliesClient:
         )
         self.client = Client(transport=transport, fetch_schema_from_transport=False)
     
-    async def get_transcripts(self, limit: int = 100, skip: int = 0) -> List[Dict[str, Any]]:
-        """Get list of transcripts"""
+    async def get_transcripts(
+        self, 
+        limit: int = 50, 
+        skip: int = 0,
+        from_date: Optional[str] = None,
+        to_date: Optional[str] = None,
+        participants: Optional[List[str]] = None,
+        organizers: Optional[List[str]] = None
+    ) -> List[Dict[str, Any]]:
+        """Get list of transcripts with proper date filtering"""
         query = gql("""
-            query GetTranscripts($limit: Int, $skip: Int) {
-                transcripts(limit: $limit, skip: $skip) {
+            query GetTranscripts(
+                $limit: Int
+                $skip: Int
+                $fromDate: DateTime
+                $toDate: DateTime
+                $participants: [String]
+                $organizers: [String]
+            ) {
+                transcripts(
+                    limit: $limit
+                    skip: $skip
+                    fromDate: $fromDate
+                    toDate: $toDate
+                    participants: $participants
+                    organizers: $organizers
+                ) {
                     id
                     title
+                    dateString
                     date
                     duration
                     host_email
@@ -56,16 +79,28 @@ class FirefliesClient:
                     }
                     audio_url
                     video_url
+                    transcript_url
                 }
             }
         """)
         
+        variables = {
+            "limit": min(limit, 50),  # API limit is 50
+            "skip": skip
+        }
+        
+        if from_date:
+            variables["fromDate"] = from_date
+        if to_date:
+            variables["toDate"] = to_date
+        if participants:
+            variables["participants"] = participants
+        if organizers:
+            variables["organizers"] = organizers
+        
         try:
             async with self.client as session:
-                result = await session.execute(
-                    query,
-                    variable_values={"limit": limit, "skip": skip}
-                )
+                result = await session.execute(query, variable_values=variables)
                 return result.get("transcripts", [])
         except Exception as e:
             print(f"Fireflies API Error - get_transcripts: {e}")
