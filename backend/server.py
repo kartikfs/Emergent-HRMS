@@ -1474,6 +1474,18 @@ async def get_dashboard_trends(
             last_value = trends[key][-1]["value"]
             if first_value > 0:
                 change = ((last_value - first_value) / first_value) * 100
+            else:
+                change = 0.0 if last_value == 0 else 100.0
+            changes[key] = round(change, 1)
+        else:
+            changes[key] = 0.0
+
+    return {
+        "period": period,
+        "trends": trends,
+        "changes": changes,
+    }
+
 
 # ============ MEETINGS & RECORDINGS HUB ROUTES ============
 
@@ -1822,7 +1834,7 @@ async def get_employee_meetings(
     # Get meetings
     query = {"participants.email": employee_email}
     total = await db.meetings_cache.count_documents(query)
-    meetings = await db.meetings_cache.find(query, {"_id": 0}) \
+    meetings = await db.meetings_cache.find(query, {"_id": 0, "raw_data": 0}) \
         .sort("start_time", -1) \
         .skip(offset) \
         .limit(limit) \

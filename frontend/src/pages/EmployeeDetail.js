@@ -4,12 +4,13 @@ import axios from "axios";
 import { API, toast } from "@/App";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ArrowLeft, User, Mail, Phone, MapPin, Calendar, Briefcase, DollarSign, Clock, AlertCircle, TrendingUp, ChevronLeft, ChevronRight } from "lucide-react";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
+import EmployeeMeetingsSection from "@/components/meetings/EmployeeMeetingsSection";
 
 const EmployeeDetail = () => {
   const { id } = useParams();
@@ -695,6 +696,11 @@ const EmployeeDetail = () => {
             </CardContent>
           </Card>
         </div>
+      </div>
+
+      {/* Recent Meetings */}
+      <div className="mt-6">
+        <EmployeeMeetingsSection employeeId={id} />
       </div>
 
       {/* Edit Employee Dialog */}
