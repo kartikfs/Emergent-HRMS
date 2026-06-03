@@ -88,8 +88,35 @@ class MeetingsService:
                 ))
         
         # Check for call recordings
-        has_recordings = len(meeting_data.get("call_recordings", [])) > 0
-        
+        call_recordings = meeting_data.get("call_recordings", []) or []
+        has_recordings = len(call_recordings) > 0
+
+        # Build a normalized recordings list for the UI
+        recordings = []
+        for rec in call_recordings:
+            try:
+                rid_obj = rec.get("id", {})
+                rid = rid_obj.get("call_recording_id") if isinstance(rid_obj, dict) else str(rid_obj)
+                rec_url = (
+                    rec.get("recording_url")
+                    or rec.get("playback_url")
+                    or rec.get("media_url")
+                    or rec.get("url")
+                )
+                recordings.append({
+                    "id": rid,
+                    "url": rec_url,
+                    "mime": rec.get("mime_type") or rec.get("content_type"),
+                    "duration": rec.get("duration_seconds") or rec.get("duration"),
+                    "source": "attio",
+                    "title": rec.get("title") or meeting_data.get("title"),
+                })
+            except Exception:
+                continue
+
+        # Best-effort surface a primary audio/video URL too
+        primary_url = next((r["url"] for r in recordings if r.get("url")), None)
+
         return Meeting(
             id=f"attio_{meeting_id}",
             source="attio",
@@ -101,6 +128,8 @@ class MeetingsService:
             participants=participants,
             has_recording=has_recordings,
             has_transcript=has_recordings,
+            audio_url=primary_url,
+            recordings=recordings,
             linked_companies=[r.get("record_id") for r in meeting_data.get("linked_records", []) if r.get("object_slug") == "companies"],
             raw_data=meeting_data
         )
@@ -108,12 +137,17 @@ class MeetingsService:
     async def _process_fireflies_meeting(self, transcript_data: Dict[str, Any]) -> Meeting:
         """Convert Fireflies transcript data to Meeting model"""
         participants = []
-        for attendee in transcript_data.get("meeting_attendees", []):
-            if attendee.get("email") or attendee.get("name"):
-                participants.append(MeetingParticipant(
-                    name=attendee.get("name", "Unknown"),
-                    email=attendee.get("email", "")
-                ))
+        for attendee in transcript_data.get("meeting_attendees", []) or []:
+            name = attendee.get("name") or attendee.get("displayName") or ""
+            email = attendee.get("email") or ""
+            if not name and email:
+                name = email.split("@")[0]
+            if not name and not email:
+                continue
+            participants.append(MeetingParticipant(
+                name=name or "Unknown",
+                email=email or ""
+            ))
         
         # Parse Fireflies date (Unix timestamp in milliseconds)
         start_time = None
@@ -127,8 +161,8 @@ class MeetingsService:
                 start_time = transcript_data.get("date")
         
         # Extract action items
-        summary = transcript_data.get("summary", {})
-        action_items = summary.get("action_items", [])
+        summary = transcript_data.get("summary") or {}
+        action_items = summary.get("action_items") or []
         action_items_count = len(action_items) if isinstance(action_items, list) else 0
         
         # Duration in minutes
@@ -140,7 +174,29 @@ class MeetingsService:
         summary_text = summary.get("overview", summary.get("shorthand_bullet", ""))
         if isinstance(summary_text, list):
             summary_text = " ".join(summary_text)
-        
+
+        audio_url = transcript_data.get("audio_url")
+        video_url = transcript_data.get("video_url")
+        recordings = []
+        if video_url:
+            recordings.append({
+                "id": f"{transcript_data['id']}_video",
+                "url": video_url,
+                "mime": "video/mp4",
+                "duration": transcript_data.get("duration"),
+                "source": "fireflies",
+                "title": transcript_data.get("title"),
+            })
+        if audio_url:
+            recordings.append({
+                "id": f"{transcript_data['id']}_audio",
+                "url": audio_url,
+                "mime": "audio/mpeg",
+                "duration": transcript_data.get("duration"),
+                "source": "fireflies",
+                "title": transcript_data.get("title"),
+            })
+
         return Meeting(
             id=f"fireflies_{transcript_data['id']}",
             source="fireflies",
@@ -152,8 +208,13 @@ class MeetingsService:
             summary=summary_text,
             keywords=summary.get("keywords", []) if summary.get("keywords") else [],
             has_recording=True,  # Fireflies always has recordings
+            has_video=bool(video_url),
+            has_audio=bool(audio_url),
             has_transcript=True,
             action_items_count=action_items_count,
+            audio_url=audio_url,
+            video_url=video_url,
+            recordings=recordings,
             raw_data=transcript_data
         )
     
@@ -244,8 +305,12 @@ class MeetingsService:
             # Process and deduplicate
             processed_attio = []
             for meeting in attio_meetings:
-                processed = await self._process_attio_meeting(meeting)
-                processed_attio.append(processed.model_dump())
+                try:
+                    processed = await self._process_attio_meeting(meeting)
+                    processed_attio.append(processed.model_dump())
+                except Exception as e:
+                    print(f"⚠️ Skipping Attio meeting due to mapping error: {e}")
+                    continue
             
             # Sort Attio by date too (latest first)
             processed_attio.sort(
@@ -255,8 +320,13 @@ class MeetingsService:
             
             processed_fireflies = []
             for transcript in fireflies_transcripts:
-                processed = await self._process_fireflies_meeting(transcript)
-                processed_fireflies.append(processed.model_dump())
+                try:
+                    processed = await self._process_fireflies_meeting(transcript)
+                    processed_fireflies.append(processed.model_dump())
+                except Exception as e:
+                    print(f"⚠️ Skipping Fireflies transcript {transcript.get('id')} due to mapping error: {e}")
+                    continue
+            print(f"🔥 Mapped {len(processed_fireflies)} Fireflies meetings for DB insert")
             
             # Deduplicate
             merged_meetings = []
@@ -306,12 +376,20 @@ class MeetingsService:
             print(f"✅ Total merged meetings: {len(merged_meetings)} (sorted latest first)")
             
             # Upsert to MongoDB
+            inserted = 0
+            failed = 0
             for meeting in merged_meetings:
-                await self.db.meetings_cache.update_one(
-                    {"id": meeting["id"]},
-                    {"$set": meeting},
-                    upsert=True
-                )
+                try:
+                    await self.db.meetings_cache.update_one(
+                        {"id": meeting["id"]},
+                        {"$set": meeting},
+                        upsert=True
+                    )
+                    inserted += 1
+                except Exception as e:
+                    failed += 1
+                    print(f"⚠️ Failed to upsert meeting {meeting.get('id')}: {e}")
+            print(f"💾 Upserted {inserted}/{len(merged_meetings)} meetings (failed: {failed})")
             
             # Extract and store action items from Fireflies
             for ff_meeting in processed_fireflies:
@@ -414,11 +492,15 @@ class MeetingsService:
         
         # Fallback to Attio
         if not transcript_lines and meeting.get("attio_id"):
-            # Get first recording ID
-            raw_data = meeting.get("raw_data", {})
+            # Get first recording ID from raw_data or normalized recordings
+            raw_data = meeting.get("raw_data", {}) or {}
             recording_ids = raw_data.get("call_recording_ids", [])
+            if not recording_ids:
+                for rec in (meeting.get("recordings") or []):
+                    if rec.get("id"):
+                        recording_ids.append(rec["id"])
             if recording_ids:
-                transcript_data = await self.attio.get_meeting_transcript(
+                transcript_data = await self.attio.get_call_recording(
                     meeting["attio_id"],
                     recording_ids[0]
                 )

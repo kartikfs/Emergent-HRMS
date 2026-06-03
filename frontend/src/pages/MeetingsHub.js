@@ -10,6 +10,7 @@ import axios from "axios";
 import MeetingCard from "@/components/meetings/MeetingCard";
 import MeetingDetailDrawer from "@/components/meetings/MeetingDetailDrawer";
 import MeetingFilters from "@/components/meetings/MeetingFilters";
+import MeetingsTimeline from "@/components/meetings/MeetingsTimeline";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -71,6 +72,9 @@ export default function MeetingsHub() {
         endpoint = `${API}/meetings/attio`;
       } else if (activeTab === "fireflies") {
         endpoint = `${API}/meetings/fireflies`;
+      } else if (activeTab === "timeline") {
+        // Timeline always shows all meetings (large window)
+        endpoint = `${API}/meetings`;
       }
 
       const params = new URLSearchParams();
@@ -79,6 +83,11 @@ export default function MeetingsHub() {
           params.append(key, filters[key]);
         }
       });
+      if (activeTab === "timeline") {
+        // Override pagination for calendar
+        params.set("limit", "500");
+        params.set("offset", "0");
+      }
 
       const response = await axios.get(`${endpoint}?${params.toString()}`, {
         headers: { Authorization: `Bearer ${token}` }
@@ -296,15 +305,19 @@ export default function MeetingsHub() {
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="all">All Meetings ({stats.total})</TabsTrigger>
-          <TabsTrigger value="attio">
+        <TabsList className="grid w-full grid-cols-4">
+          <TabsTrigger value="all" data-testid="tab-all">All Meetings ({stats.total})</TabsTrigger>
+          <TabsTrigger value="attio" data-testid="tab-attio">
             <Badge variant="outline" className="mr-2 bg-blue-50 text-blue-700 border-blue-300">Attio</Badge>
             {stats.attio}
           </TabsTrigger>
-          <TabsTrigger value="fireflies">
+          <TabsTrigger value="fireflies" data-testid="tab-fireflies">
             <Badge variant="outline" className="mr-2 bg-green-50 text-green-700 border-green-300">Fireflies</Badge>
             {stats.fireflies}
+          </TabsTrigger>
+          <TabsTrigger value="timeline" data-testid="tab-timeline">
+            <Calendar className="w-4 h-4 mr-2" />
+            Timeline
           </TabsTrigger>
         </TabsList>
 
@@ -330,6 +343,17 @@ export default function MeetingsHub() {
             loading={loading} 
             onSelectMeeting={setSelectedMeeting}
           />
+        </TabsContent>
+
+        <TabsContent value="timeline" className="mt-6">
+          {loading ? (
+            <div className="text-center py-12">
+              <RefreshCw className="w-8 h-8 animate-spin mx-auto text-blue-500 mb-4" />
+              <p className="text-gray-500">Loading timeline...</p>
+            </div>
+          ) : (
+            <MeetingsTimeline meetings={meetings} onSelectMeeting={setSelectedMeeting} />
+          )}
         </TabsContent>
       </Tabs>
 

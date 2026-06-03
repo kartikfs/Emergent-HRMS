@@ -1,8 +1,22 @@
-import React, { useState, useEffect } from "react";
-import { X, Calendar, Clock, Users, Video, FileText, ExternalLink, Download, CheckCircle } from "lucide-react";
+import React, { useState, useEffect, useRef } from "react";
+import {
+  X,
+  Calendar,
+  Clock,
+  Users,
+  Video,
+  FileText,
+  ExternalLink,
+  Download,
+  CheckCircle,
+  Sparkles,
+  Send,
+  Trash2,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import axios from "axios";
 
@@ -14,43 +28,58 @@ export default function MeetingDetailDrawer({ meeting, open, onClose }) {
   const [loadingTranscript, setLoadingTranscript] = useState(false);
   const [actionItems, setActionItems] = useState([]);
 
+  // AI chat state
+  const [chatMessages, setChatMessages] = useState([]);
+  const [chatInput, setChatInput] = useState("");
+  const [chatLoading, setChatLoading] = useState(false);
+  const chatEndRef = useRef(null);
+  const sessionId = meeting ? `meeting_${meeting.id}` : null;
+
   useEffect(() => {
     if (open && meeting) {
       fetchTranscript();
       fetchActionItems();
+      fetchChatHistory();
+    } else {
+      // reset on close
+      setChatMessages([]);
+      setChatInput("");
+      setTranscript(null);
     }
-  }, [open, meeting]);
+  }, [open, meeting?.id]);
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [chatMessages, chatLoading]);
+
+  const authHeaders = () => {
+    const token = localStorage.getItem("admin_token") || localStorage.getItem("token");
+    return { Authorization: `Bearer ${token}` };
+  };
 
   const fetchTranscript = async () => {
-    if (!meeting.has_transcript) return;
-    
+    if (!meeting?.has_transcript) return;
     try {
       setLoadingTranscript(true);
-      const token = localStorage.getItem("admin_token") || localStorage.getItem("token");
       const response = await axios.get(`${API}/meetings/${meeting.id}/transcript`, {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: authHeaders(),
       });
       setTranscript(response.data);
     } catch (error) {
       console.error("Error fetching transcript:", error);
-      toast.error("Failed to load transcript");
     } finally {
       setLoadingTranscript(false);
     }
   };
 
   const fetchActionItems = async () => {
-    if (!meeting.fireflies_id) return;
-    
+    if (!meeting?.fireflies_id) return;
     try {
-      const token = localStorage.getItem("admin_token") || localStorage.getItem("token");
       const response = await axios.get(`${API}/meetings/action-items`, {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: authHeaders(),
       });
-      
-      // Filter action items for this meeting
       const meetingActions = response.data.action_items.filter(
-        item => item.meeting_id === meeting.id
+        (item) => item.meeting_id === meeting.id
       );
       setActionItems(meetingActions);
     } catch (error) {
@@ -58,19 +87,83 @@ export default function MeetingDetailDrawer({ meeting, open, onClose }) {
     }
   };
 
+  const fetchChatHistory = async () => {
+    if (!meeting) return;
+    try {
+      const response = await axios.get(
+        `${API}/meetings/${meeting.id}/chat/history?session_id=${encodeURIComponent(sessionId)}`,
+        { headers: authHeaders() }
+      );
+      setChatMessages(response.data.messages || []);
+    } catch (error) {
+      console.error("Error fetching chat history:", error);
+    }
+  };
+
+  const sendChatMessage = async (e) => {
+    e?.preventDefault();
+    const text = chatInput.trim();
+    if (!text || chatLoading) return;
+
+    const optimisticUser = {
+      id: `tmp_${Date.now()}`,
+      role: "user",
+      content: text,
+      created_at: new Date().toISOString(),
+    };
+    setChatMessages((prev) => [...prev, optimisticUser]);
+    setChatInput("");
+    setChatLoading(true);
+
+    try {
+      const response = await axios.post(
+        `${API}/meetings/${meeting.id}/chat`,
+        { message: text, session_id: sessionId },
+        { headers: authHeaders() }
+      );
+      setChatMessages((prev) => [
+        ...prev.filter((m) => m.id !== optimisticUser.id),
+        response.data.user_message,
+        response.data.assistant_message,
+      ]);
+    } catch (error) {
+      console.error("Chat error:", error);
+      const detail = error.response?.data?.detail || "AI chat failed";
+      toast.error(detail);
+      setChatMessages((prev) =>
+        prev.map((m) =>
+          m.id === optimisticUser.id ? { ...m, _error: detail } : m
+        )
+      );
+    } finally {
+      setChatLoading(false);
+    }
+  };
+
+  const clearChat = async () => {
+    if (!meeting) return;
+    try {
+      await axios.delete(
+        `${API}/meetings/${meeting.id}/chat?session_id=${encodeURIComponent(sessionId)}`,
+        { headers: authHeaders() }
+      );
+      setChatMessages([]);
+      toast.success("Chat cleared");
+    } catch (error) {
+      toast.error("Failed to clear chat");
+    }
+  };
+
   const toggleActionItem = async (itemId, currentStatus) => {
     try {
       const newStatus = currentStatus === "done" ? "open" : "done";
-      const token = localStorage.getItem("admin_token") || localStorage.getItem("token");
-      
       await axios.patch(
-        `${API}/meetings/action-items/${itemId}`,
-        { status: newStatus },
-        { headers: { Authorization: `Bearer ${token}` } }
+        `${API}/meetings/action-items/${itemId}?status=${newStatus}`,
+        {},
+        { headers: authHeaders() }
       );
-      
-      setActionItems(prev => 
-        prev.map(item => 
+      setActionItems((prev) =>
+        prev.map((item) =>
           item.id === itemId ? { ...item, status: newStatus } : item
         )
       );
@@ -89,23 +182,30 @@ export default function MeetingDetailDrawer({ meeting, open, onClose }) {
     return date.toLocaleString();
   };
 
+  const recordings = (meeting.recordings && meeting.recordings.length > 0)
+    ? meeting.recordings
+    : [
+        meeting.video_url && { url: meeting.video_url, mime: "video/mp4", source: meeting.source, id: "v" },
+        meeting.audio_url && { url: meeting.audio_url, mime: "audio/mpeg", source: meeting.source, id: "a" },
+      ].filter(Boolean);
+
   return (
-    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-end">
+    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-end" data-testid="meeting-drawer">
       <div className="bg-white h-full w-full md:w-2/3 lg:w-1/2 shadow-2xl overflow-y-auto">
         {/* Header */}
         <div className="sticky top-0 bg-white border-b p-6 flex items-start justify-between z-10">
           <div className="flex-1">
             <h2 className="text-2xl font-bold text-gray-900 mb-2">{meeting.title}</h2>
             <div className="flex flex-wrap gap-2">
-              {meeting.source === "attio" || meeting.source === "both" ? (
+              {(meeting.source === "attio" || meeting.source === "both") && (
                 <Badge className="bg-blue-500">Attio</Badge>
-              ) : null}
-              {meeting.source === "fireflies" || meeting.source === "both" ? (
+              )}
+              {(meeting.source === "fireflies" || meeting.source === "both") && (
                 <Badge className="bg-green-500">Fireflies</Badge>
-              ) : null}
+              )}
             </div>
           </div>
-          <Button variant="ghost" size="sm" onClick={onClose}>
+          <Button variant="ghost" size="sm" onClick={onClose} data-testid="drawer-close-btn">
             <X className="w-5 h-5" />
           </Button>
         </div>
@@ -140,9 +240,12 @@ export default function MeetingDetailDrawer({ meeting, open, onClose }) {
                 <Users className="w-5 h-5" />
                 Participants ({meeting.participants.length})
               </h3>
-              <div className="space-y-2">
+              <div className="space-y-2 max-h-48 overflow-y-auto">
                 {meeting.participants.map((participant, i) => (
-                  <div key={i} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                  <div
+                    key={i}
+                    className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg"
+                  >
                     <div className="w-8 h-8 rounded-full bg-blue-500 text-white flex items-center justify-center font-semibold text-sm">
                       {participant.name?.charAt(0) || "?"}
                     </div>
@@ -153,7 +256,9 @@ export default function MeetingDetailDrawer({ meeting, open, onClose }) {
                       )}
                     </div>
                     {meeting.host_email === participant.email && (
-                      <Badge variant="outline" className="ml-auto">Host</Badge>
+                      <Badge variant="outline" className="ml-auto">
+                        Host
+                      </Badge>
                     )}
                   </div>
                 ))}
@@ -161,53 +266,79 @@ export default function MeetingDetailDrawer({ meeting, open, onClose }) {
             </div>
           )}
 
-          {/* Media Links */}
-          {(meeting.audio_url || meeting.video_url) && (
-            <div>
+          {/* Recordings */}
+          {recordings.length > 0 && (
+            <div data-testid="recordings-section">
               <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
                 <Video className="w-5 h-5" />
-                Recordings
+                Recordings ({recordings.length})
               </h3>
-              <div className="flex gap-3">
-                {meeting.video_url && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => window.open(meeting.video_url, '_blank')}
-                  >
-                    <Video className="w-4 h-4 mr-2" />
-                    Watch Video
-                    <ExternalLink className="w-3 h-3 ml-2" />
-                  </Button>
-                )}
-                {meeting.audio_url && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => window.open(meeting.audio_url, '_blank')}
-                  >
-                    <Download className="w-4 h-4 mr-2" />
-                    Download Audio
-                  </Button>
-                )}
+              <div className="space-y-2">
+                {recordings.map((rec, idx) => {
+                  const isVideo = (rec.mime || "").startsWith("video") || /mp4|webm|mov/i.test(rec.url || "");
+                  return (
+                    <div
+                      key={rec.id || idx}
+                      className="flex items-center justify-between p-3 border rounded-lg hover:border-blue-300 transition-colors"
+                    >
+                      <div className="flex items-center gap-3">
+                        {isVideo ? (
+                          <Video className="w-5 h-5 text-purple-600" />
+                        ) : (
+                          <Download className="w-5 h-5 text-blue-600" />
+                        )}
+                        <div>
+                          <p className="text-sm font-medium">
+                            {rec.title || (isVideo ? "Video recording" : "Audio recording")}
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            {rec.source || meeting.source} {rec.mime ? `· ${rec.mime}` : ""}
+                          </p>
+                        </div>
+                      </div>
+                      {rec.url ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => window.open(rec.url, "_blank")}
+                          data-testid={`recording-open-${idx}`}
+                        >
+                          Open
+                          <ExternalLink className="w-3 h-3 ml-2" />
+                        </Button>
+                      ) : (
+                        <Badge variant="outline" className="text-gray-500">
+                          URL unavailable
+                        </Badge>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
 
           {/* Tabs for detailed content */}
           <Tabs defaultValue="summary" className="w-full">
-            <TabsList className="grid w-full grid-cols-3">
-              <TabsTrigger value="summary">Summary</TabsTrigger>
-              <TabsTrigger value="transcript">Transcript</TabsTrigger>
-              <TabsTrigger value="actions">Action Items ({actionItems.length})</TabsTrigger>
+            <TabsList className="grid w-full grid-cols-4">
+              <TabsTrigger value="summary" data-testid="drawer-tab-summary">Summary</TabsTrigger>
+              <TabsTrigger value="transcript" data-testid="drawer-tab-transcript">Transcript</TabsTrigger>
+              <TabsTrigger value="actions" data-testid="drawer-tab-actions">
+                Actions ({actionItems.length})
+              </TabsTrigger>
+              <TabsTrigger value="ai-chat" data-testid="drawer-tab-ai-chat">
+                <Sparkles className="w-4 h-4 mr-1" /> AI Chat
+              </TabsTrigger>
             </TabsList>
 
             <TabsContent value="summary" className="space-y-4">
-              {meeting.summary && (
+              {meeting.summary ? (
                 <div>
                   <h4 className="font-semibold mb-2">Overview</h4>
                   <p className="text-sm text-gray-700 whitespace-pre-wrap">{meeting.summary}</p>
                 </div>
+              ) : (
+                <p className="text-sm text-gray-500">No summary available.</p>
               )}
 
               {meeting.topics && meeting.topics.length > 0 && (
@@ -215,7 +346,9 @@ export default function MeetingDetailDrawer({ meeting, open, onClose }) {
                   <h4 className="font-semibold mb-2">Topics Discussed</h4>
                   <div className="flex flex-wrap gap-2">
                     {meeting.topics.map((topic, i) => (
-                      <Badge key={i} variant="outline">{topic}</Badge>
+                      <Badge key={i} variant="outline">
+                        {topic}
+                      </Badge>
                     ))}
                   </div>
                 </div>
@@ -226,46 +359,10 @@ export default function MeetingDetailDrawer({ meeting, open, onClose }) {
                   <h4 className="font-semibold mb-2">Keywords</h4>
                   <div className="flex flex-wrap gap-2">
                     {meeting.keywords.map((keyword, i) => (
-                      <Badge key={i} variant="secondary" className="bg-gray-100">{keyword}</Badge>
+                      <Badge key={i} variant="secondary" className="bg-gray-100">
+                        {keyword}
+                      </Badge>
                     ))}
-                  </div>
-                </div>
-              )}
-
-              {meeting.sentiment && (
-                <div>
-                  <h4 className="font-semibold mb-2">Sentiment Analysis</h4>
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-3">
-                      <span className="text-sm w-20">Positive</span>
-                      <div className="flex-1 h-4 bg-gray-200 rounded-full overflow-hidden">
-                        <div 
-                          className="h-full bg-green-500"
-                          style={{ width: `${meeting.sentiment.positive}%` }}
-                        />
-                      </div>
-                      <span className="text-sm font-medium">{meeting.sentiment.positive.toFixed(1)}%</span>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <span className="text-sm w-20">Neutral</span>
-                      <div className="flex-1 h-4 bg-gray-200 rounded-full overflow-hidden">
-                        <div 
-                          className="h-full bg-yellow-500"
-                          style={{ width: `${meeting.sentiment.neutral}%` }}
-                        />
-                      </div>
-                      <span className="text-sm font-medium">{meeting.sentiment.neutral.toFixed(1)}%</span>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <span className="text-sm w-20">Negative</span>
-                      <div className="flex-1 h-4 bg-gray-200 rounded-full overflow-hidden">
-                        <div 
-                          className="h-full bg-red-500"
-                          style={{ width: `${meeting.sentiment.negative}%` }}
-                        />
-                      </div>
-                      <span className="text-sm font-medium">{meeting.sentiment.negative.toFixed(1)}%</span>
-                    </div>
                   </div>
                 </div>
               )}
@@ -277,23 +374,17 @@ export default function MeetingDetailDrawer({ meeting, open, onClose }) {
                   <p className="text-gray-500">Loading transcript...</p>
                 </div>
               ) : transcript && transcript.lines ? (
-                <div className="space-y-3">
+                <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-2">
                   {transcript.lines.map((line, i) => (
                     <div key={i} className="flex gap-3 p-3 rounded-lg hover:bg-gray-50">
                       <div className="w-24 flex-shrink-0">
                         <p className="text-xs text-gray-500">
-                          {Math.floor(line.start_time / 60)}:{String(Math.floor(line.start_time % 60)).padStart(2, '0')}
+                          {Math.floor(line.start_time / 60)}:
+                          {String(Math.floor(line.start_time % 60)).padStart(2, "0")}
                         </p>
                         <p className="font-medium text-sm text-gray-700">{line.speaker}</p>
                       </div>
                       <p className="text-sm text-gray-800 flex-1">{line.text}</p>
-                      {line.ai_filters && Object.values(line.ai_filters).some(v => v) && (
-                        <div className="flex flex-wrap gap-1">
-                          {line.ai_filters.task && <Badge className="text-xs bg-orange-100 text-orange-700">Task</Badge>}
-                          {line.ai_filters.question && <Badge className="text-xs bg-blue-100 text-blue-700">Q</Badge>}
-                          {line.ai_filters.pricing && <Badge className="text-xs bg-green-100 text-green-700">$</Badge>}
-                        </div>
-                      )}
                     </div>
                   ))}
                 </div>
@@ -309,22 +400,30 @@ export default function MeetingDetailDrawer({ meeting, open, onClose }) {
               {actionItems.length > 0 ? (
                 <div className="space-y-3">
                   {actionItems.map((item) => (
-                    <div 
+                    <div
                       key={item.id}
                       className="flex items-start gap-3 p-4 border rounded-lg hover:border-blue-300 transition-colors"
                     >
                       <button
                         onClick={() => toggleActionItem(item.id, item.status)}
                         className={`mt-1 w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 ${
-                          item.status === "done" 
-                            ? "bg-green-500 border-green-500" 
+                          item.status === "done"
+                            ? "bg-green-500 border-green-500"
                             : "border-gray-300 hover:border-blue-500"
                         }`}
                       >
-                        {item.status === "done" && <CheckCircle className="w-4 h-4 text-white" />}
+                        {item.status === "done" && (
+                          <CheckCircle className="w-4 h-4 text-white" />
+                        )}
                       </button>
                       <div className="flex-1">
-                        <p className={`text-sm ${item.status === "done" ? "line-through text-gray-500" : "text-gray-800"}`}>
+                        <p
+                          className={`text-sm ${
+                            item.status === "done"
+                              ? "line-through text-gray-500"
+                              : "text-gray-800"
+                          }`}
+                        >
                           {item.text}
                         </p>
                         {item.assigned_to && (
@@ -345,6 +444,95 @@ export default function MeetingDetailDrawer({ meeting, open, onClose }) {
                   <p className="text-gray-500">No action items found</p>
                 </div>
               )}
+            </TabsContent>
+
+            <TabsContent value="ai-chat">
+              <div className="flex flex-col" style={{ minHeight: 380 }}>
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-xs text-gray-500">
+                    Ask anything about this meeting. Answers come from the transcript & summary (GPT-5.2).
+                  </p>
+                  {chatMessages.length > 0 && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={clearChat}
+                      data-testid="ai-chat-clear-btn"
+                    >
+                      <Trash2 className="w-3 h-3 mr-1" /> Clear
+                    </Button>
+                  )}
+                </div>
+
+                <div
+                  className="flex-1 border rounded-lg p-3 bg-gray-50 overflow-y-auto space-y-3"
+                  style={{ maxHeight: 360 }}
+                  data-testid="ai-chat-messages"
+                >
+                  {chatMessages.length === 0 && !chatLoading && (
+                    <div className="text-center text-sm text-gray-400 py-8">
+                      <Sparkles className="w-8 h-8 mx-auto mb-2 text-gray-300" />
+                      Try: <em>"Summarize the key decisions"</em> or{" "}
+                      <em>"What did Kartik say about pricing?"</em>
+                    </div>
+                  )}
+                  {chatMessages.map((m) => (
+                    <div
+                      key={m.id}
+                      className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}
+                    >
+                      <div
+                        className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm whitespace-pre-wrap ${
+                          m.role === "user"
+                            ? "bg-blue-600 text-white rounded-br-sm"
+                            : "bg-white border text-gray-800 rounded-bl-sm"
+                        } ${m._error ? "ring-1 ring-red-300" : ""}`}
+                      >
+                        {m.content}
+                        {m._error && (
+                          <div className="text-[10px] mt-1 text-red-200">⚠ {m._error}</div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                  {chatLoading && (
+                    <div className="flex justify-start">
+                      <div className="bg-white border rounded-2xl rounded-bl-sm px-3 py-2 text-sm text-gray-500 inline-flex items-center gap-2">
+                        <Sparkles className="w-3 h-3 animate-pulse" /> Thinking…
+                      </div>
+                    </div>
+                  )}
+                  <div ref={chatEndRef} />
+                </div>
+
+                <form
+                  onSubmit={sendChatMessage}
+                  className="mt-3 flex items-end gap-2"
+                  data-testid="ai-chat-form"
+                >
+                  <Textarea
+                    value={chatInput}
+                    onChange={(e) => setChatInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        sendChatMessage();
+                      }
+                    }}
+                    placeholder="Ask a question about this meeting…"
+                    rows={2}
+                    className="flex-1 resize-none"
+                    data-testid="ai-chat-input"
+                  />
+                  <Button
+                    type="submit"
+                    disabled={chatLoading || !chatInput.trim()}
+                    data-testid="ai-chat-send-btn"
+                  >
+                    <Send className="w-4 h-4" />
+                  </Button>
+                </form>
+              </div>
             </TabsContent>
           </Tabs>
         </div>

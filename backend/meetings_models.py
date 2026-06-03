@@ -6,8 +6,8 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime
 
 class MeetingParticipant(BaseModel):
-    name: str
-    email: str
+    name: str = "Unknown"
+    email: str = ""
     role: Optional[str] = None
 
 class ActionItem(BaseModel):
@@ -55,6 +55,7 @@ class Meeting(BaseModel):
     sentiment: Optional[MeetingSentiment] = None
     audio_url: Optional[str] = None
     video_url: Optional[str] = None
+    recordings: List[Dict[str, Any]] = []  # [{id, url, mime, source}] for Attio + Fireflies
     meeting_type: Optional[str] = None
     linked_companies: List[str] = []
     linked_contacts: List[str] = []

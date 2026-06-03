@@ -56,28 +56,48 @@ class FirefliesClient:
             async with self.client as session:
                 result = await session.execute(query, variable_values=variables)
                 transcripts = result.get("transcripts", [])
-                
-                # Filter by date if needed
+
+                # Filter by date if needed. Fireflies returns `date` as Unix
+                # milliseconds (int). Previous implementation called
+                # parser.parse() on an int which always threw, silently
+                # dropping every transcript.
                 if from_date or to_date:
-                    from dateutil import parser
+                    from dateutil import parser as _dt_parser
+                    from datetime import datetime, timezone as _tz
+
+                    def _to_dt(value):
+                        if value is None:
+                            return None
+                        if isinstance(value, (int, float)):
+                            # Fireflies ms epoch
+                            return datetime.fromtimestamp(value / 1000, tz=_tz.utc)
+                        if isinstance(value, str):
+                            # ISO or numeric string
+                            if value.isdigit():
+                                return datetime.fromtimestamp(int(value) / 1000, tz=_tz.utc)
+                            dt = _dt_parser.parse(value)
+                            if dt.tzinfo is None:
+                                dt = dt.replace(tzinfo=_tz.utc)
+                            return dt
+                        return None
+
+                    from_d = _to_dt(from_date)
+                    to_d = _to_dt(to_date)
+
                     filtered = []
                     for t in transcripts:
-                        if t.get("date"):
-                            try:
-                                t_date = parser.parse(t["date"])
-                                if from_date:
-                                    from_d = parser.parse(from_date)
-                                    if t_date < from_d:
-                                        continue
-                                if to_date:
-                                    to_d = parser.parse(to_date)
-                                    if t_date > to_d:
-                                        continue
-                                filtered.append(t)
-                            except:
-                                pass
+                        t_date = _to_dt(t.get("date"))
+                        if t_date is None:
+                            # Keep meetings with unknown date rather than drop
+                            filtered.append(t)
+                            continue
+                        if from_d and t_date < from_d:
+                            continue
+                        if to_d and t_date > to_d:
+                            continue
+                        filtered.append(t)
                     return filtered
-                
+
                 return transcripts
         except Exception as e:
             print(f"Fireflies API Error - get_transcripts: {e}")

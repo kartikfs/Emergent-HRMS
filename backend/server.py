@@ -1895,6 +1895,176 @@ async def search_meetings(
     }
 
 
+# ============ MEETING AI CHAT ============
+class MeetingChatRequest(BaseModel):
+    message: str
+    session_id: Optional[str] = None
+
+
+def _build_meeting_context(meeting: dict, transcript: Optional[dict]) -> str:
+    """Compact textual context fed to the LLM."""
+    parts = [f"Meeting Title: {meeting.get('title', 'Untitled')}"]
+    if meeting.get("start_time"):
+        parts.append(f"Date: {meeting['start_time']}")
+    if meeting.get("duration_minutes"):
+        parts.append(f"Duration: {meeting['duration_minutes']} minutes")
+    participants = meeting.get("participants") or []
+    if participants:
+        names = ", ".join(p.get("name") or p.get("email", "") for p in participants[:25])
+        parts.append(f"Participants: {names}")
+    if meeting.get("summary"):
+        parts.append(f"\nSummary:\n{meeting['summary']}")
+    if meeting.get("keywords"):
+        parts.append(f"Keywords: {', '.join(meeting['keywords'][:30])}")
+    if meeting.get("topics"):
+        parts.append(f"Topics: {', '.join(meeting['topics'][:30])}")
+    if transcript and transcript.get("lines"):
+        # Cap transcript size to keep prompts within budget
+        lines = transcript["lines"][:600]
+        transcript_text = "\n".join(
+            f"{ln.get('speaker', 'Unknown')}: {ln.get('text', '')}" for ln in lines
+        )
+        parts.append(f"\nTranscript:\n{transcript_text}")
+    return "\n".join(parts)
+
+
+@api_router.get("/meetings/{meeting_id}/chat/history")
+async def get_meeting_chat_history(
+    meeting_id: str,
+    session_id: Optional[str] = None,
+    current_user: dict = Depends(get_current_user)
+):
+    """Return previous chat messages for this meeting (optionally per session)."""
+    query = {"meeting_id": meeting_id, "user_id": current_user.get("id")}
+    if session_id:
+        query["session_id"] = session_id
+    messages = await db.meeting_chat_messages.find(query, {"_id": 0}) \
+        .sort("created_at", 1) \
+        .to_list(1000)
+    return {"messages": messages}
+
+
+@api_router.post("/meetings/{meeting_id}/chat")
+async def chat_with_meeting(
+    meeting_id: str,
+    payload: MeetingChatRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """Ask AI a question about this meeting's transcript / summary (GPT-5.2)."""
+    meeting = await db.meetings_cache.find_one({"id": meeting_id}, {"_id": 0})
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+
+    # Access control: non-admins must be participants
+    if current_user.get("role") != "admin":
+        user_email = (current_user.get("email") or "").lower()
+        participant_emails = [
+            (p.get("email") or "").lower() for p in meeting.get("participants", [])
+        ]
+        if user_email not in participant_emails:
+            raise HTTPException(status_code=403, detail="Access denied")
+
+    # Fetch transcript (cached or on-demand)
+    transcript_obj = None
+    try:
+        transcript_model = await meetings_service.get_transcript(meeting_id)
+        if transcript_model:
+            transcript_obj = transcript_model.model_dump()
+    except Exception as e:
+        logger.warning(f"Transcript fetch failed for {meeting_id}: {e}")
+
+    context = _build_meeting_context(meeting, transcript_obj)
+
+    session_id = payload.session_id or f"{current_user.get('id')}_{meeting_id}"
+
+    # Save user message
+    user_msg_doc = {
+        "id": str(uuid.uuid4()),
+        "meeting_id": meeting_id,
+        "user_id": current_user.get("id"),
+        "session_id": session_id,
+        "role": "user",
+        "content": payload.message,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.meeting_chat_messages.insert_one(user_msg_doc.copy())
+
+    # Call LLM via emergentintegrations
+    emergent_key = os.environ.get("EMERGENT_LLM_KEY")
+    if not emergent_key:
+        raise HTTPException(status_code=500, detail="EMERGENT_LLM_KEY not configured")
+
+    system_prompt = (
+        "You are an assistant that answers questions about a specific business meeting. "
+        "Use ONLY the provided meeting context (summary, transcript, participants) to answer. "
+        "If something is not present in the context, say so honestly. "
+        "Be concise, structured, and quote speakers when relevant.\n\n"
+        f"=== MEETING CONTEXT ===\n{context}\n=== END CONTEXT ==="
+    )
+
+    try:
+        from emergentintegrations.llm.chat import LlmChat, UserMessage
+        chat = LlmChat(
+            api_key=emergent_key,
+            session_id=session_id,
+            system_message=system_prompt,
+        ).with_model("openai", "gpt-5.2")
+
+        # Re-feed prior conversation so the model has memory (simple approach)
+        history = await db.meeting_chat_messages.find(
+            {"meeting_id": meeting_id, "session_id": session_id, "user_id": current_user.get("id")},
+            {"_id": 0},
+        ).sort("created_at", 1).to_list(1000)
+
+        # Build a single user message with embedded history for the simplest path
+        # (LlmChat session-id also keeps server-side history but we surface ours)
+        question = payload.message
+        if len(history) > 2:  # include lightweight prior turns
+            prior = "\n".join(
+                f"{m['role'].upper()}: {m['content']}"
+                for m in history[-10:-1]  # last few, excluding the just-saved user msg
+            )
+            question = f"Conversation so far:\n{prior}\n\nNew question: {payload.message}"
+
+        response = await chat.send_message(UserMessage(text=question))
+        answer = response if isinstance(response, str) else str(response)
+    except Exception as e:
+        logger.exception("LLM chat failed")
+        raise HTTPException(status_code=500, detail=f"AI chat error: {e}")
+
+    assistant_msg_doc = {
+        "id": str(uuid.uuid4()),
+        "meeting_id": meeting_id,
+        "user_id": current_user.get("id"),
+        "session_id": session_id,
+        "role": "assistant",
+        "content": answer,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.meeting_chat_messages.insert_one(assistant_msg_doc.copy())
+
+    return {
+        "session_id": session_id,
+        "answer": answer,
+        "user_message": user_msg_doc,
+        "assistant_message": assistant_msg_doc,
+    }
+
+
+@api_router.delete("/meetings/{meeting_id}/chat")
+async def clear_meeting_chat(
+    meeting_id: str,
+    session_id: Optional[str] = None,
+    current_user: dict = Depends(get_current_user)
+):
+    """Clear chat history for a meeting (user-scoped)."""
+    query = {"meeting_id": meeting_id, "user_id": current_user.get("id")}
+    if session_id:
+        query["session_id"] = session_id
+    result = await db.meeting_chat_messages.delete_many(query)
+    return {"deleted": result.deleted_count}
+
+
 # Include the router in the main app
 app.include_router(api_router)
 
