@@ -103,8 +103,33 @@ class FirefliesClient:
             print(f"Fireflies API Error - get_transcripts: {e}")
             return []
     
+    async def get_transcript_details(self, transcript_id: str) -> Optional[Dict[str, Any]]:
+        """Lightweight per-transcript details (free-tier safe).
+
+        Avoids `analytics` and other paid-tier fields. Used during sync to
+        enrich list items with audio_url / video_url / host_email."""
+        query = gql("""
+            query GetTranscriptDetails($id: String!) {
+                transcript(id: $id) {
+                    id
+                    host_email
+                    audio_url
+                    video_url
+                }
+            }
+        """)
+        try:
+            async with self.client as session:
+                result = await session.execute(
+                    query, variable_values={"id": transcript_id}
+                )
+                return result.get("transcript")
+        except Exception as e:
+            print(f"Fireflies API Error - get_transcript_details: {e}")
+            return None
+
     async def get_transcript(self, transcript_id: str) -> Optional[Dict[str, Any]]:
-        """Get single transcript with full sentences"""
+        """Get single transcript with full sentences (free-tier safe)."""
         query = gql("""
             query GetTranscript($id: String!) {
                 transcript(id: $id) {
@@ -113,7 +138,6 @@ class FirefliesClient:
                     date
                     duration
                     host_email
-                    participants
                     meeting_attendees {
                         name
                         email
@@ -122,32 +146,13 @@ class FirefliesClient:
                         action_items
                         overview
                         bullet_gist
-                        topics_discussed
                         keywords
-                        meeting_type
-                    }
-                    analytics {
-                        sentiments {
-                            positive_pct
-                            negative_pct
-                            neutral_pct
-                        }
-                        speakers {
-                            name
-                        }
                     }
                     sentences {
                         speaker_name
                         text
                         start_time
                         end_time
-                        ai_filters {
-                            task
-                            pricing
-                            metric
-                            question
-                            sentiment
-                        }
                     }
                     audio_url
                     video_url

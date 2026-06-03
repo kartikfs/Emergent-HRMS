@@ -34,7 +34,7 @@ export default function MeetingsHub() {
     has_action_items: null,
     sort_by: "start_time",
     sort_order: "desc",
-    limit: 50,
+    limit: 500,
     offset: 0
   });
 
@@ -172,9 +172,11 @@ export default function MeetingsHub() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold text-gray-900">Meetings & Recordings Hub</h1>
+          <h1 className="text-2xl md:text-3xl font-bold text-gray-900 tracking-tight">
+            Meetings & Recordings Hub
+          </h1>
           <p className="text-sm text-gray-500 mt-1">
-            View meetings from Attio CRM and Fireflies AI
+            Unified view across Attio CRM and Fireflies AI — sorted latest first
           </p>
         </div>
 
@@ -184,6 +186,7 @@ export default function MeetingsHub() {
             size="sm"
             onClick={fetchMeetings}
             disabled={loading}
+            data-testid="refresh-meetings-btn"
           >
             <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
             Refresh
@@ -195,6 +198,7 @@ export default function MeetingsHub() {
               onClick={handleSync}
               disabled={syncStatus?.is_syncing}
               className="bg-blue-600 hover:bg-blue-700"
+              data-testid="sync-now-btn"
             >
               <Download className="w-4 h-4 mr-2" />
               {syncStatus?.is_syncing ? "Syncing..." : "Sync Now"}
@@ -372,14 +376,14 @@ export default function MeetingsHub() {
 function MeetingsList({ meetings, loading, onSelectMeeting }) {
   if (loading) {
     return (
-      <div className="text-center py-12">
+      <div className="text-center py-12" data-testid="meetings-loading">
         <RefreshCw className="w-8 h-8 animate-spin mx-auto text-blue-500 mb-4" />
         <p className="text-gray-500">Loading meetings...</p>
       </div>
     );
   }
 
-  if (meetings.length === 0) {
+  if (!meetings || meetings.length === 0) {
     return (
       <Card>
         <CardContent className="py-12 text-center">
@@ -391,15 +395,64 @@ function MeetingsList({ meetings, loading, onSelectMeeting }) {
     );
   }
 
+  // Group meetings by date bucket (Today, Yesterday, This Week, This Month, Older)
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const yesterday = new Date(today); yesterday.setDate(yesterday.getDate() - 1);
+  const startOfWeek = new Date(today); startOfWeek.setDate(today.getDate() - today.getDay());
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+  const bucketFor = (m) => {
+    if (!m.start_time) return { key: "no-date", label: "No date" };
+    const d = new Date(m.start_time);
+    if (Number.isNaN(d.getTime())) return { key: "no-date", label: "No date" };
+    const day = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    if (day >= today) return { key: "today", label: "Today" };
+    if (day.getTime() === yesterday.getTime()) return { key: "yesterday", label: "Yesterday" };
+    if (day >= startOfWeek) return { key: "this-week", label: "Earlier this week" };
+    if (day >= startOfMonth) return { key: "this-month", label: "Earlier this month" };
+    return {
+      key: `m-${d.getFullYear()}-${d.getMonth()}`,
+      label: d.toLocaleDateString("en-US", { month: "long", year: "numeric" }),
+    };
+  };
+
+  const groupsOrder = [];
+  const groups = new Map();
+  for (const m of meetings) {
+    const b = bucketFor(m);
+    if (!groups.has(b.key)) {
+      groups.set(b.key, { label: b.label, items: [] });
+      groupsOrder.push(b.key);
+    }
+    groups.get(b.key).items.push(m);
+  }
+
   return (
-    <div className="grid grid-cols-1 gap-4">
-      {meetings.map((meeting) => (
-        <MeetingCard
-          key={meeting.id}
-          meeting={meeting}
-          onClick={() => onSelectMeeting(meeting)}
-        />
-      ))}
+    <div className="space-y-8" data-testid="meetings-list">
+      {groupsOrder.map((key) => {
+        const g = groups.get(key);
+        return (
+          <div key={key}>
+            <div className="flex items-center gap-3 mb-3">
+              <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+                {g.label}
+              </h3>
+              <span className="text-xs text-gray-400">({g.items.length})</span>
+              <div className="flex-1 h-px bg-gray-200" />
+            </div>
+            <div className="grid grid-cols-1 gap-3">
+              {g.items.map((meeting) => (
+                <MeetingCard
+                  key={meeting.id}
+                  meeting={meeting}
+                  onClick={() => onSelectMeeting(meeting)}
+                />
+              ))}
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }

@@ -1598,7 +1598,7 @@ async def get_meetings(
     sort_direction = -1 if sort_order == "desc" else 1
     
     # Get meetings
-    meetings = await db.meetings_cache.find(query, {"_id": 0}) \
+    meetings = await db.meetings_cache.find(query, {"_id": 0, "raw_data": 0}) \
         .sort(sort_by, sort_direction) \
         .skip(offset) \
         .limit(limit) \
@@ -1644,7 +1644,7 @@ async def get_attio_meetings(
         query["participants.email"] = current_user.get("email")
     
     total = await db.meetings_cache.count_documents(query)
-    meetings = await db.meetings_cache.find(query, {"_id": 0}) \
+    meetings = await db.meetings_cache.find(query, {"_id": 0, "raw_data": 0}) \
         .sort("start_time", -1) \
         .skip(offset) \
         .limit(limit) \
@@ -1701,7 +1701,7 @@ async def get_fireflies_meetings(
         query["participants.email"] = current_user.get("email")
     
     total = await db.meetings_cache.count_documents(query)
-    meetings = await db.meetings_cache.find(query, {"_id": 0}) \
+    meetings = await db.meetings_cache.find(query, {"_id": 0, "raw_data": 0}) \
         .sort("start_time", -1) \
         .skip(offset) \
         .limit(limit) \

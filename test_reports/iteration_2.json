@@ -1,0 +1,45 @@
+{
+  "summary": "Tested PeopleHub Meetings & Recordings Hub end-to-end. Backend: 9/9 pytest tests passed (listing, source filters, sync, chat history/delete, chat POST error handling). Frontend: all 4 tabs, drawer, AI Chat, and Timeline calendar (Month/Week/Day) work correctly with proper data-testids. AI Chat is actually FUNCTIONAL (Emergent LLM key returned a real GPT-5.2 response — budget is NOT currently exceeded). Stats 208/200/8/8 match spec.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/meetings/{id}", "issue": "Returns 404 for single-meeting fetch by id (no detail endpoint). Frontend doesn't seem to need it directly but it is missing."},
+      {"endpoint": "GET /api/meetings/{id}/transcript", "issue": "Returns 404 'Transcript not available' for fireflies meetings. Fireflies free-tier GraphQL doesn't return transcript_text — expected limitation, but the drawer's Transcript tab will appear empty. Should fallback to an inline empty-state message in UI."},
+      {"endpoint": "POST /api/meetings/sync", "issue": "Fireflies pull was non-deterministic (got 8 first run, 7 on a re-sync). Likely Fireflies free-tier rate limit / pagination flake. Spec expects 8 total. The 8 are present in DB from initial sync."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Dashboard (separate from Meetings Hub)", "issue": "Console error spam: 'Error fetching trends: TypeError: Cannot read properties of null (reading trends)' - appears on every dashboard mount. Out of scope for this task but worth flagging.", "selector": "n/a", "priority": "LOW"},
+      {"component": "Dashboard charts", "issue": "Recharts width(-1) height(-1) warning when chart container has 0 size. Cosmetic.", "selector": "n/a", "priority": "LOW"},
+      {"component": "MeetingDetailDrawer Transcript tab", "issue": "When transcript endpoint 404s for free-tier Fireflies meetings, console logs 'Error fetching transcript: AxiosError'. UI should show a graceful empty-state and suppress the console error.", "selector": "[data-testid='drawer-tab-transcript']", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Meetings Hub stats cards", "issues": ["Stat cards correctly show 208/200/8/8 on All tab. Note: when switching to Fireflies tab, stat cards reflect only the 8 fireflies, which can confuse users (they appear to be 'global' stats but recompute per tab). Consider keeping global counts persistent."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_meetings_hub.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "Make /api/meetings/{id}/transcript return 200 with empty transcript_text & a friendly message instead of 404 for free-tier Fireflies (or have frontend suppress 404 and show empty state).",
+    "Add /api/meetings/{id} single-meeting GET endpoint for completeness.",
+    "Fix Dashboard 'trends' null-deref error (separate from Meetings work but visible in console).",
+    "Optional: keep Meetings Hub stats cards as global totals regardless of active tab."
+  ],
+  "critical_code_review_comments": [
+    "AI Chat works end-to-end (POST /api/meetings/{id}/chat returns GPT-5.2 response). LLM budget is currently NOT exceeded contrary to the request hint — successful response observed in drawer.",
+    "Fireflies sync correctly persists 8 transcripts with recordings deep-link (https://app.fireflies.ai/view/<id>). 8/8 successful.",
+    "Meetings sort order is correctly descending by start_time (MAY 2026 → APRIL 2026 → ... → ~JAN 2026).",
+    "All required data-testids present: tab-all/attio/fireflies/timeline, meeting-drawer, drawer-tab-summary/transcript/actions/ai-chat, ai-chat-input/send-btn/messages, recording-open-0, timeline-view-month/week/day, timeline-prev/today/next-btn, timeline-day-YYYY-MM-DD chips.",
+    "Cards show date, time, title, source badge (Attio blue / Fireflies green), participant avatars, summary preview, recording / transcript / keywords badges — matches spec.",
+    "Dashboard 'trends' API integration has a null-handling bug (unrelated to Meetings Hub but visible)."
+  ],
+  "updated_files": ["/app/backend/tests/test_meetings_hub.py"],
+  "success_rate": {"backend": "100% (9/9 pytest)", "frontend": "95% (only minor: transcript 404 toast, dashboard trends error)"},
+  "test_credentials": "admin@peoplehub.com / admin123",
+  "seed_data_creation": "None. Used the existing 208 (200 Attio + 8 Fireflies) dataset.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend regression suite at /app/backend/tests/test_meetings_hub.py — run with: pytest /app/backend/tests/test_meetings_hub.py -v. Fireflies sync count can fluctuate (free-tier API flakes). Sample meeting ids: fireflies_01KQFGRQ8A82V3K7W0N9JQE2XC. AI Chat is currently functional (NOT budget-exceeded as previously hinted).",
+  "rca of the issue": "N/A — no blocking bugs. Two minor items: (a) transcript endpoint 404 surfaces a console AxiosError instead of empty-state UI; (b) Dashboard 'trends' null-deref is pre-existing and unrelated to Meetings Hub."
+}

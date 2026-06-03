@@ -1,139 +1,189 @@
 import React from "react";
-import { Calendar, Clock, Users, Video, FileText, TrendingUp, AlertCircle } from "lucide-react";
+import {
+  Calendar,
+  Clock,
+  Users,
+  Video,
+  FileText,
+  AlertCircle,
+  Mic,
+  ChevronRight,
+} from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
 export default function MeetingCard({ meeting, onClick }) {
-  const formatDate = (dateString) => {
-    if (!dateString) return "N/A";
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', { 
-      month: 'short', 
-      day: 'numeric', 
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
+  const formatDateTime = (dateString) => {
+    if (!dateString) return { date: "—", time: "—" };
+    const d = new Date(dateString);
+    if (Number.isNaN(d.getTime())) return { date: dateString, time: "" };
+    return {
+      date: d.toLocaleDateString("en-US", {
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      }),
+      time: d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }),
+    };
   };
 
-  const getSourceBadge = (source) => {
-    if (source === "attio" || source === "both") {
-      return <Badge className="bg-blue-500 text-white">Attio</Badge>;
-    }
-    if (source === "fireflies") {
-      return <Badge className="bg-green-500 text-white">Fireflies</Badge>;
-    }
-    return null;
-  };
+  const { date, time } = formatDateTime(meeting.start_time);
 
-  const getSentimentColor = (sentiment) => {
-    if (!sentiment) return "text-gray-400";
-    if (sentiment.positive > 50) return "text-green-600";
-    if (sentiment.negative > 30) return "text-red-600";
-    return "text-yellow-600";
-  };
+  const sourceColor =
+    meeting.source === "attio" || meeting.source === "both"
+      ? "#3b82f6"
+      : meeting.source === "fireflies"
+      ? "#10b981"
+      : "#9ca3af";
+
+  const initials = (name = "") =>
+    name
+      .split(" ")
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((w) => w[0]?.toUpperCase() || "")
+      .join("") || "?";
 
   return (
-    <Card 
-      className="hover:shadow-lg transition-shadow cursor-pointer border-l-4"
-      style={{
-        borderLeftColor: meeting.source === "attio" || meeting.source === "both" ? "#3b82f6" : "#10b981"
-      }}
+    <Card
+      className="group hover:shadow-md hover:-translate-y-px transition-all cursor-pointer border-l-4"
+      style={{ borderLeftColor: sourceColor }}
       onClick={onClick}
+      data-testid={`meeting-card-${meeting.id}`}
     >
-      <CardContent className="pt-6">
-        <div className="flex items-start justify-between mb-4">
-          <div className="flex-1">
-            <div className="flex items-center gap-2 mb-2">
-              <h3 className="text-lg font-semibold text-gray-900">{meeting.title}</h3>
-              {getSourceBadge(meeting.source)}
-              {meeting.source === "both" && (
-                <Badge className="bg-green-500 text-white">Fireflies</Badge>
+      <CardContent className="py-4 px-5">
+        <div className="flex items-start gap-4">
+          {/* Date column */}
+          <div className="flex flex-col items-center justify-center w-16 flex-shrink-0 text-center border-r pr-4">
+            <div className="text-[10px] uppercase tracking-wide text-gray-500">
+              {date.split(",")[1]?.trim().split(" ")[0]}
+            </div>
+            <div className="text-2xl font-bold text-gray-900 leading-none">
+              {date.split(",")[1]?.trim().split(" ")[1] || "—"}
+            </div>
+            <div className="text-[11px] text-gray-500 mt-1">{time}</div>
+          </div>
+
+          {/* Main */}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-start justify-between gap-3 mb-1.5">
+              <h3 className="text-base font-semibold text-gray-900 truncate group-hover:text-blue-600 transition-colors">
+                {meeting.title}
+              </h3>
+              <div className="flex items-center gap-1.5 flex-shrink-0">
+                {(meeting.source === "attio" || meeting.source === "both") && (
+                  <Badge className="bg-blue-500 hover:bg-blue-500 text-white text-[10px] px-1.5 py-0">
+                    Attio
+                  </Badge>
+                )}
+                {(meeting.source === "fireflies" || meeting.source === "both") && (
+                  <Badge className="bg-green-500 hover:bg-green-500 text-white text-[10px] px-1.5 py-0">
+                    Fireflies
+                  </Badge>
+                )}
+              </div>
+            </div>
+
+            {/* Meta row */}
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500 mb-2">
+              <span className="inline-flex items-center gap-1">
+                <Calendar className="w-3 h-3" />
+                {date}
+              </span>
+              {meeting.duration_minutes ? (
+                <span className="inline-flex items-center gap-1">
+                  <Clock className="w-3 h-3" />
+                  {meeting.duration_minutes} min
+                </span>
+              ) : null}
+              <span className="inline-flex items-center gap-1">
+                <Users className="w-3 h-3" />
+                {meeting.participants?.length || 0}
+              </span>
+              {meeting.host_email && (
+                <span className="truncate max-w-[180px]">
+                  Host: <span className="text-gray-700">{meeting.host_email.split("@")[0]}</span>
+                </span>
               )}
             </div>
-            
-            <div className="flex flex-wrap items-center gap-4 text-sm text-gray-600">
-              <div className="flex items-center gap-1">
-                <Calendar className="w-4 h-4" />
-                <span>{formatDate(meeting.start_time)}</span>
+
+            {/* Summary preview */}
+            {meeting.summary && (
+              <p className="text-xs text-gray-600 mb-2 line-clamp-2">{meeting.summary}</p>
+            )}
+
+            {/* Participants avatars */}
+            {meeting.participants && meeting.participants.length > 0 && (
+              <div className="flex items-center -space-x-1.5 mb-2">
+                {meeting.participants.slice(0, 5).map((p, i) => (
+                  <div
+                    key={i}
+                    title={`${p.name}${p.email ? ` · ${p.email}` : ""}`}
+                    className="w-6 h-6 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-white text-[10px] font-semibold flex items-center justify-center ring-2 ring-white"
+                  >
+                    {initials(p.name)}
+                  </div>
+                ))}
+                {meeting.participants.length > 5 && (
+                  <div className="w-6 h-6 rounded-full bg-gray-200 text-gray-700 text-[10px] font-semibold flex items-center justify-center ring-2 ring-white">
+                    +{meeting.participants.length - 5}
+                  </div>
+                )}
               </div>
-              
-              {meeting.duration_minutes && (
-                <div className="flex items-center gap-1">
-                  <Clock className="w-4 h-4" />
-                  <span>{meeting.duration_minutes} min</span>
-                </div>
+            )}
+
+            {/* Indicators */}
+            <div className="flex flex-wrap items-center gap-1.5">
+              {meeting.has_recording && (
+                <Badge
+                  variant="outline"
+                  className="text-purple-700 border-purple-200 bg-purple-50 text-[10px] py-0"
+                >
+                  <Video className="w-3 h-3 mr-1" />
+                  {meeting.recordings?.length || 1} recording
+                  {(meeting.recordings?.length || 1) > 1 ? "s" : ""}
+                </Badge>
               )}
-              
-              <div className="flex items-center gap-1">
-                <Users className="w-4 h-4" />
-                <span>{meeting.participants?.length || 0} participants</span>
-              </div>
+              {meeting.has_transcript && (
+                <Badge
+                  variant="outline"
+                  className="text-blue-700 border-blue-200 bg-blue-50 text-[10px] py-0"
+                >
+                  <FileText className="w-3 h-3 mr-1" />
+                  Transcript
+                </Badge>
+              )}
+              {meeting.action_items_count > 0 && (
+                <Badge
+                  variant="outline"
+                  className="text-orange-700 border-orange-200 bg-orange-50 text-[10px] py-0"
+                >
+                  <AlertCircle className="w-3 h-3 mr-1" />
+                  {meeting.action_items_count} action item
+                  {meeting.action_items_count > 1 ? "s" : ""}
+                </Badge>
+              )}
+              {meeting.keywords?.slice(0, 3).map((kw, i) => (
+                <Badge
+                  key={i}
+                  variant="outline"
+                  className="bg-gray-50 text-gray-700 text-[10px] py-0"
+                >
+                  {kw}
+                </Badge>
+              ))}
+              {meeting.has_audio && !meeting.has_video && (
+                <Badge variant="outline" className="text-[10px] py-0">
+                  <Mic className="w-3 h-3 mr-1" />
+                  Audio
+                </Badge>
+              )}
             </div>
           </div>
 
-          <div className="flex flex-col items-end gap-2">
-            {meeting.has_recording && (
-              <div className="flex items-center gap-1 text-sm text-purple-600">
-                <Video className="w-4 h-4" />
-                <span>Recording</span>
-              </div>
-            )}
-            {meeting.has_transcript && (
-              <div className="flex items-center gap-1 text-sm text-blue-600">
-                <FileText className="w-4 h-4" />
-                <span>Transcript</span>
-              </div>
-            )}
-          </div>
+          <ChevronRight className="w-5 h-5 text-gray-300 group-hover:text-gray-500 transition-colors flex-shrink-0" />
         </div>
-
-        {/* Summary */}
-        {meeting.summary && (
-          <p className="text-sm text-gray-600 mb-4 line-clamp-2">
-            {meeting.summary}
-          </p>
-        )}
-
-        {/* Tags and Indicators */}
-        <div className="flex flex-wrap items-center gap-2">
-          {meeting.action_items_count > 0 && (
-            <Badge variant="outline" className="text-orange-600 border-orange-300 bg-orange-50">
-              <AlertCircle className="w-3 h-3 mr-1" />
-              {meeting.action_items_count} Action Items
-            </Badge>
-          )}
-
-          {meeting.sentiment && (
-            <Badge variant="outline" className={`border-gray-300 ${getSentimentColor(meeting.sentiment)}`}>
-              <TrendingUp className="w-3 h-3 mr-1" />
-              Sentiment: {meeting.sentiment.positive > 50 ? "Positive" : meeting.sentiment.negative > 30 ? "Negative" : "Neutral"}
-            </Badge>
-          )}
-
-          {meeting.topics && meeting.topics.slice(0, 3).map((topic, i) => (
-            <Badge key={i} variant="outline" className="bg-gray-50">
-              {topic}
-            </Badge>
-          ))}
-
-          {meeting.host_email && (
-            <Badge variant="outline" className="bg-blue-50 text-blue-700">
-              Host: {meeting.host_email.split('@')[0]}
-            </Badge>
-          )}
-        </div>
-
-        {/* Participants Preview */}
-        {meeting.participants && meeting.participants.length > 0 && (
-          <div className="mt-3 flex items-center gap-2 text-xs text-gray-500">
-            <Users className="w-3 h-3" />
-            <span>
-              {meeting.participants.slice(0, 3).map(p => p.name).join(", ")}
-              {meeting.participants.length > 3 && ` +${meeting.participants.length - 3} more`}
-            </span>
-          </div>
-        )}
       </CardContent>
     </Card>
   );

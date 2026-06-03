@@ -126,11 +126,13 @@ class MeetingsService:
             end_time=end_time,
             duration_minutes=duration,
             participants=participants,
+            host_email=next((p.email for p in participants if p.role == "organizer"), None),
             has_recording=has_recordings,
             has_transcript=has_recordings,
             audio_url=primary_url,
             recordings=recordings,
             linked_companies=[r.get("record_id") for r in meeting_data.get("linked_records", []) if r.get("object_slug") == "companies"],
+            linked_contacts=[r.get("record_id") for r in meeting_data.get("linked_records", []) if r.get("object_slug") in ("people", "contacts")],
             raw_data=meeting_data
         )
     
@@ -177,6 +179,8 @@ class MeetingsService:
 
         audio_url = transcript_data.get("audio_url")
         video_url = transcript_data.get("video_url")
+        # Always provide a deep-link to Fireflies UI (works on every tier)
+        fireflies_view_url = f"https://app.fireflies.ai/view/{transcript_data['id']}"
         recordings = []
         if video_url:
             recordings.append({
@@ -196,6 +200,15 @@ class MeetingsService:
                 "source": "fireflies",
                 "title": transcript_data.get("title"),
             })
+        # Always offer the Fireflies UI deep-link as a fallback recording entry
+        recordings.append({
+            "id": f"{transcript_data['id']}_view",
+            "url": fireflies_view_url,
+            "mime": "text/html",
+            "duration": transcript_data.get("duration"),
+            "source": "fireflies",
+            "title": "Open in Fireflies",
+        })
 
         return Meeting(
             id=f"fireflies_{transcript_data['id']}",
@@ -205,6 +218,7 @@ class MeetingsService:
             start_time=start_time,
             duration_minutes=duration_minutes,
             participants=participants,
+            host_email=transcript_data.get("host_email"),
             summary=summary_text,
             keywords=summary.get("keywords", []) if summary.get("keywords") else [],
             has_recording=True,  # Fireflies always has recordings
@@ -301,6 +315,10 @@ class MeetingsService:
             )
             
             print(f"✅ Fetched {len(fireflies_transcripts)} Fireflies transcripts")
+            # NOTE: audio_url, video_url, host_email, analytics and sentences
+            # are gated behind Fireflies' paid tier and return 403 on free.
+            # We surface a deep-link to app.fireflies.ai/view/<id> instead so
+            # users can still open the meeting in Fireflies UI.
             
             # Process and deduplicate
             processed_attio = []
