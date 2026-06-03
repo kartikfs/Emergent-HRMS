@@ -71,7 +71,6 @@ class FirefliesClient:
                         }
                         speakers {
                             name
-                            email
                             talk_time
                             words_per_minute
                             filler_words
@@ -137,7 +136,6 @@ class FirefliesClient:
                         }
                         speakers {
                             name
-                            email
                             talk_time
                             words_per_minute
                             filler_words
