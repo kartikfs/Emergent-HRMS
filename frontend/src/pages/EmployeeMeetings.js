@@ -23,8 +23,9 @@ export default function EmployeeMeetings() {
   const fetchEmployeeMeetings = async () => {
     try {
       setLoading(true);
-      const token = localStorage.getItem("token");
-      const user = JSON.parse(localStorage.getItem("user") || "{}");
+      const token = localStorage.getItem("employee_token") || localStorage.getItem("token");
+      const userData = localStorage.getItem("employee_data") || localStorage.getItem("user");
+      const user = JSON.parse(userData || "{}");
       
       if (!user.id) {
         toast.error("User information not found");
