@@ -22,6 +22,19 @@ class MeetingsService:
         self.attio = AttioClient()
         self.fireflies = FirefliesClient()
         self.timezone = pytz.timezone(os.environ.get("MEETINGS_TIMEZONE", "Asia/Kolkata"))
+        # In-memory cache keyed by (object_slug, record_id) → display name
+        self._attio_name_cache: Dict[tuple, Optional[str]] = {}
+
+    async def _resolve_attio_name(self, object_slug: str, record_id: str) -> Optional[str]:
+        if not record_id:
+            return None
+        key = (object_slug, record_id)
+        if key in self._attio_name_cache:
+            return self._attio_name_cache[key]
+        record = await self.attio.get_record(object_slug, record_id)
+        name = self.attio.extract_name_from_record(record) if record else None
+        self._attio_name_cache[key] = name
+        return name
     
     def _deduplicate_meetings(
         self, 
@@ -72,7 +85,7 @@ class MeetingsService:
                 start = parser.parse(start_time)
                 end = parser.parse(end_time)
                 duration = int((end - start).total_seconds() / 60)
-            except:
+            except Exception:
                 pass
         
         # Process participants
@@ -117,6 +130,26 @@ class MeetingsService:
         # Best-effort surface a primary audio/video URL too
         primary_url = next((r["url"] for r in recordings if r.get("url")), None)
 
+        # Linked record IDs
+        linked_records = meeting_data.get("linked_records", []) or []
+        company_ids = [
+            r.get("record_id") for r in linked_records if r.get("object_slug") == "companies"
+        ]
+        contact_ids = [
+            r.get("record_id") for r in linked_records if r.get("object_slug") in ("people", "contacts")
+        ]
+        # Resolve names (uses cache; one lookup per unique record across the sync)
+        company_names = []
+        for cid in company_ids:
+            n = await self._resolve_attio_name("companies", cid)
+            if n:
+                company_names.append(n)
+        contact_names = []
+        for pid in contact_ids:
+            n = await self._resolve_attio_name("people", pid)
+            if n:
+                contact_names.append(n)
+
         return Meeting(
             id=f"attio_{meeting_id}",
             source="attio",
@@ -127,12 +160,15 @@ class MeetingsService:
             duration_minutes=duration,
             participants=participants,
             host_email=next((p.email for p in participants if p.role == "organizer"), None),
+            summary=meeting_data.get("description") or None,
             has_recording=has_recordings,
             has_transcript=has_recordings,
             audio_url=primary_url,
             recordings=recordings,
-            linked_companies=[r.get("record_id") for r in meeting_data.get("linked_records", []) if r.get("object_slug") == "companies"],
-            linked_contacts=[r.get("record_id") for r in meeting_data.get("linked_records", []) if r.get("object_slug") in ("people", "contacts")],
+            linked_companies=company_ids,
+            linked_contacts=contact_ids,
+            linked_company_names=company_names,
+            linked_contact_names=contact_names,
             raw_data=meeting_data
         )
     
@@ -164,8 +200,22 @@ class MeetingsService:
         
         # Extract action items
         summary = transcript_data.get("summary") or {}
-        action_items = summary.get("action_items") or []
-        action_items_count = len(action_items) if isinstance(action_items, list) else 0
+        action_items_raw = summary.get("action_items") or []
+        # Fireflies returns action_items either as List[str] or as a multi-line string
+        if isinstance(action_items_raw, str):
+            action_items_list = [
+                line.strip("- •*\t ").strip()
+                for line in action_items_raw.split("\n")
+                if line.strip()
+            ]
+        elif isinstance(action_items_raw, list):
+            action_items_list = [
+                (a if isinstance(a, str) else (a.get("text") or str(a)))
+                for a in action_items_raw
+            ]
+        else:
+            action_items_list = []
+        action_items_count = len(action_items_list)
         
         # Duration in minutes
         duration_minutes = None
@@ -226,6 +276,7 @@ class MeetingsService:
             has_audio=bool(audio_url),
             has_transcript=True,
             action_items_count=action_items_count,
+            action_items_list=action_items_list,
             audio_url=audio_url,
             video_url=video_url,
             recordings=recordings,
@@ -315,10 +366,11 @@ class MeetingsService:
             )
             
             print(f"✅ Fetched {len(fireflies_transcripts)} Fireflies transcripts")
-            # NOTE: audio_url, video_url, host_email, analytics and sentences
-            # are gated behind Fireflies' paid tier and return 403 on free.
-            # We surface a deep-link to app.fireflies.ai/view/<id> instead so
-            # users can still open the meeting in Fireflies UI.
+            # NOTE on Fireflies free tier:
+            #   - audio_url, video_url, host_email, analytics  → require Pro
+            #   - sentences (transcript text) + summary + meeting_attendees → FREE
+            # We surface a deep-link to app.fireflies.ai/view/<id> as the
+            # "recording" entry and fetch sentences on-demand in the drawer.
             
             # Process and deduplicate
             processed_attio = []
@@ -409,40 +461,40 @@ class MeetingsService:
                     print(f"⚠️ Failed to upsert meeting {meeting.get('id')}: {e}")
             print(f"💾 Upserted {inserted}/{len(merged_meetings)} meetings (failed: {failed})")
             
-            # Extract and store action items from Fireflies
+            # Extract and store action items from Fireflies (use parsed list)
+            employees = await self.db.employees.find(
+                {}, {"_id": 0, "email": 1, "first_name": 1, "last_name": 1}
+            ).to_list(1000)
             for ff_meeting in processed_fireflies:
-                if ff_meeting.get("raw_data") and ff_meeting["raw_data"].get("summary"):
-                    action_items = ff_meeting["raw_data"]["summary"].get("action_items", [])
-                    if isinstance(action_items, list):
-                        for i, item_text in enumerate(action_items):
-                            # Try to auto-assign to employees
-                            assigned_to = None
-                            assigned_to_name = None
-                            
-                            # Simple heuristic: check if any employee email is mentioned
-                            employees = await self.db.employees.find({}, {"_id": 0, "email": 1, "first_name": 1, "last_name": 1}).to_list(1000)
-                            for emp in employees:
-                                if emp["email"].lower() in item_text.lower():
-                                    assigned_to = emp["email"]
-                                    assigned_to_name = f"{emp.get('first_name', '')} {emp.get('last_name', '')}".strip()
-                                    break
-                            
-                            action_item = ActionItem(
-                                id=f"{ff_meeting['id']}_action_{i}",
-                                text=item_text,
-                                meeting_id=ff_meeting["id"],
-                                meeting_title=ff_meeting["title"],
-                                assigned_to=assigned_to,
-                                assigned_to_name=assigned_to_name,
-                                source="fireflies",
-                                created_at=datetime.utcnow().isoformat()
-                            )
-                            
-                            await self.db.meeting_action_items.update_one(
-                                {"id": action_item.id},
-                                {"$set": action_item.model_dump()},
-                                upsert=True
-                            )
+                items_list = ff_meeting.get("action_items_list") or []
+                for i, item_text in enumerate(items_list):
+                    if not item_text or not isinstance(item_text, str):
+                        continue
+                    # Try to auto-assign to employees
+                    assigned_to = None
+                    assigned_to_name = None
+                    for emp in employees:
+                        if emp.get("email") and emp["email"].lower() in item_text.lower():
+                            assigned_to = emp["email"]
+                            assigned_to_name = f"{emp.get('first_name', '')} {emp.get('last_name', '')}".strip()
+                            break
+
+                    action_item = ActionItem(
+                        id=f"{ff_meeting['id']}_action_{i}",
+                        text=item_text,
+                        meeting_id=ff_meeting["id"],
+                        meeting_title=ff_meeting["title"],
+                        assigned_to=assigned_to,
+                        assigned_to_name=assigned_to_name,
+                        source="fireflies",
+                        created_at=datetime.utcnow().isoformat()
+                    )
+                    
+                    await self.db.meeting_action_items.update_one(
+                        {"id": action_item.id},
+                        {"$set": action_item.model_dump()},
+                        upsert=True
+                    )
             
             # Update sync status
             await self.db.meetings_sync_status.update_one(

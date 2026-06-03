@@ -129,7 +129,11 @@ class FirefliesClient:
             return None
 
     async def get_transcript(self, transcript_id: str) -> Optional[Dict[str, Any]]:
-        """Get single transcript with full sentences (free-tier safe)."""
+        """Get single transcript with full sentences (FREE-TIER SAFE).
+
+        Avoids `host_email`, `audio_url`, `video_url`, `analytics` which
+        require a paid Fireflies plan.
+        """
         query = gql("""
             query GetTranscript($id: String!) {
                 transcript(id: $id) {
@@ -137,7 +141,6 @@ class FirefliesClient:
                     title
                     date
                     duration
-                    host_email
                     meeting_attendees {
                         name
                         email
@@ -154,8 +157,6 @@ class FirefliesClient:
                         start_time
                         end_time
                     }
-                    audio_url
-                    video_url
                 }
             }
         """)

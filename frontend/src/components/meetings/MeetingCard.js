@@ -110,7 +110,12 @@ export default function MeetingCard({ meeting, onClick }) {
 
             {/* Summary preview */}
             {meeting.summary && (
-              <p className="text-xs text-gray-600 mb-2 line-clamp-2">{meeting.summary}</p>
+              <p className="text-xs text-gray-600 mb-2 line-clamp-2">
+                {meeting.summary
+                  .replace(/<br\s*\/?>/gi, " ")
+                  .replace(/<[^>]+>/g, "")
+                  .trim()}
+              </p>
             )}
 
             {/* Participants avatars */}
@@ -135,6 +140,14 @@ export default function MeetingCard({ meeting, onClick }) {
 
             {/* Indicators */}
             <div className="flex flex-wrap items-center gap-1.5">
+              {(meeting.linked_company_names || []).slice(0, 3).map((c, i) => (
+                <Badge
+                  key={`co-${i}`}
+                  className="bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 text-[10px] py-0"
+                >
+                  🏢 {c}
+                </Badge>
+              ))}
               {meeting.has_recording && (
                 <Badge
                   variant="outline"

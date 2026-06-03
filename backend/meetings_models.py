@@ -47,6 +47,7 @@ class Meeting(BaseModel):
     summary: Optional[str] = None
     topics: List[str] = []
     keywords: List[str] = []
+    action_items_list: List[str] = []  # full list of action items text
     has_recording: bool = False
     has_video: bool = False
     has_audio: bool = False
@@ -59,6 +60,8 @@ class Meeting(BaseModel):
     meeting_type: Optional[str] = None
     linked_companies: List[str] = []
     linked_contacts: List[str] = []
+    linked_company_names: List[str] = []
+    linked_contact_names: List[str] = []
     created_at: str = Field(default_factory=lambda: datetime.utcnow().isoformat())
     updated_at: str = Field(default_factory=lambda: datetime.utcnow().isoformat())
     raw_data: Optional[Dict[str, Any]] = None

@@ -1871,35 +1871,41 @@ async def get_employee_meetings(
 async def search_meetings(
     q: str,
     semantic: bool = False,
-    limit: int = 20,
+    limit: int = 200,
     current_user: dict = Depends(get_current_user)
 ):
-    """Global search across meetings"""
+    """Global search across meetings (title, summary, participants, topics,
+    keywords, linked companies & contacts)."""
     if semantic:
         # Semantic search (requires integration with embedding service)
         # For now, fallback to keyword search
         pass
-    
-    # Keyword search
+
+    regex = {"$regex": q, "$options": "i"}
     query = {
         "$or": [
-            {"title": {"$regex": q, "$options": "i"}},
-            {"summary": {"$regex": q, "$options": "i"}},
-            {"participants.name": {"$regex": q, "$options": "i"}},
-            {"participants.email": {"$regex": q, "$options": "i"}},
-            {"topics": {"$regex": q, "$options": "i"}}
+            {"title": regex},
+            {"summary": regex},
+            {"participants.name": regex},
+            {"participants.email": regex},
+            {"host_email": regex},
+            {"topics": regex},
+            {"keywords": regex},
+            {"linked_company_names": regex},
+            {"linked_contact_names": regex},
+            {"action_items_list": regex},
         ]
     }
-    
+
     # If not admin, filter by participation
     if current_user.get("role") != "admin":
-        query["participants.email"] = current_user.get("email")
-    
-    meetings = await db.meetings_cache.find(query, {"_id": 0}) \
+        query = {"$and": [query, {"participants.email": current_user.get("email")}]}
+
+    meetings = await db.meetings_cache.find(query, {"_id": 0, "raw_data": 0}) \
         .sort("start_time", -1) \
         .limit(limit) \
         .to_list(limit)
-    
+
     return {
         "results": meetings,
         "query": q,

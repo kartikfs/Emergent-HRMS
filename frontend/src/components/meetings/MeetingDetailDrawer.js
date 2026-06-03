@@ -364,10 +364,62 @@ export default function MeetingDetailDrawer({ meeting, open, onClose }) {
               {meeting.summary ? (
                 <div>
                   <h4 className="font-semibold mb-2">Overview</h4>
-                  <p className="text-sm text-gray-700 whitespace-pre-wrap">{meeting.summary}</p>
+                  <div
+                    className="text-sm text-gray-700 prose prose-sm max-w-none"
+                    // Attio sends HTML (<br>, <a>, etc.) in description; Fireflies sends plain text.
+                    dangerouslySetInnerHTML={{ __html: meeting.summary }}
+                  />
                 </div>
               ) : (
                 <p className="text-sm text-gray-500">No summary available.</p>
+              )}
+
+              {(meeting.linked_company_names?.length > 0 ||
+                meeting.linked_contact_names?.length > 0) && (
+                <div data-testid="linked-records">
+                  <h4 className="font-semibold mb-2">Linked in Attio</h4>
+                  <div className="flex flex-wrap gap-2">
+                    {(meeting.linked_company_names || []).map((c, i) => (
+                      <Badge
+                        key={`co-${i}`}
+                        className="bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100"
+                      >
+                        🏢 {c}
+                      </Badge>
+                    ))}
+                    {(meeting.linked_contact_names || []).map((p, i) => (
+                      <Badge
+                        key={`pe-${i}`}
+                        className="bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100"
+                      >
+                        👤 {p}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {meeting.action_items_list && meeting.action_items_list.length > 0 && (
+                <div data-testid="summary-action-items">
+                  <h4 className="font-semibold mb-2">
+                    Action Items ({meeting.action_items_list.length})
+                  </h4>
+                  <ul className="space-y-1.5">
+                    {meeting.action_items_list.slice(0, 8).map((item, i) => (
+                      <li
+                        key={i}
+                        className="text-sm text-gray-700 pl-3 border-l-2 border-orange-300"
+                      >
+                        {item}
+                      </li>
+                    ))}
+                    {meeting.action_items_list.length > 8 && (
+                      <li className="text-xs text-gray-400 pl-3">
+                        +{meeting.action_items_list.length - 8} more — see Actions tab
+                      </li>
+                    )}
+                  </ul>
+                </div>
               )}
 
               {meeting.topics && meeting.topics.length > 0 && (
@@ -485,6 +537,21 @@ export default function MeetingDetailDrawer({ meeting, open, onClose }) {
                       <Badge variant={item.status === "done" ? "secondary" : "default"}>
                         {item.status}
                       </Badge>
+                    </div>
+                  ))}
+                </div>
+              ) : meeting.action_items_list && meeting.action_items_list.length > 0 ? (
+                <div className="space-y-2">
+                  <p className="text-xs text-gray-500 mb-3">
+                    {meeting.action_items_list.length} action items extracted from this meeting (read-only — assign them to employees via sync to track).
+                  </p>
+                  {meeting.action_items_list.map((text, i) => (
+                    <div
+                      key={i}
+                      className="flex items-start gap-3 p-3 border rounded-lg"
+                    >
+                      <div className="mt-1 w-5 h-5 rounded border-2 border-gray-300 flex-shrink-0" />
+                      <p className="text-sm text-gray-800 flex-1">{text}</p>
                     </div>
                   ))}
                 </div>
