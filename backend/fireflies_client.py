@@ -22,28 +22,12 @@ class FirefliesClient:
         limit: int = 50, 
         skip: int = 0,
         from_date: Optional[str] = None,
-        to_date: Optional[str] = None,
-        participants: Optional[List[str]] = None,
-        organizers: Optional[List[str]] = None
+        to_date: Optional[str] = None
     ) -> List[Dict[str, Any]]:
-        """Get list of transcripts with proper date filtering"""
+        """Get list of transcripts - simplified query without optional filters"""
         query = gql("""
-            query GetTranscripts(
-                $limit: Int
-                $skip: Int
-                $fromDate: DateTime
-                $toDate: DateTime
-                $participants: [String]
-                $organizers: [String]
-            ) {
-                transcripts(
-                    limit: $limit
-                    skip: $skip
-                    fromDate: $fromDate
-                    toDate: $toDate
-                    participants: $participants
-                    organizers: $organizers
-                ) {
+            query GetTranscripts($limit: Int, $skip: Int) {
+                transcripts(limit: $limit, skip: $skip) {
                     id
                     title
                     dateString
@@ -63,19 +47,6 @@ class FirefliesClient:
                         keywords
                         meeting_type
                     }
-                    analytics {
-                        sentiments {
-                            positive_pct
-                            negative_pct
-                            neutral_pct
-                        }
-                        speakers {
-                            name
-                            talk_time
-                            words_per_minute
-                            filler_words
-                        }
-                    }
                     audio_url
                     video_url
                     transcript_url
@@ -84,23 +55,34 @@ class FirefliesClient:
         """)
         
         variables = {
-            "limit": min(limit, 50),  # API limit is 50
+            "limit": min(limit, 50),
             "skip": skip
         }
-        
-        if from_date:
-            variables["fromDate"] = from_date
-        if to_date:
-            variables["toDate"] = to_date
-        if participants:
-            variables["participants"] = participants
-        if organizers:
-            variables["organizers"] = organizers
         
         try:
             async with self.client as session:
                 result = await session.execute(query, variable_values=variables)
-                return result.get("transcripts", [])
+                transcripts = result.get("transcripts", [])
+                
+                # Filter by date if needed
+                if from_date or to_date:
+                    from dateutil import parser
+                    filtered = []
+                    for t in transcripts:
+                        if t.get("date"):
+                            t_date = parser.parse(t["date"])
+                            if from_date:
+                                from_d = parser.parse(from_date)
+                                if t_date < from_d:
+                                    continue
+                            if to_date:
+                                to_d = parser.parse(to_date)
+                                if t_date > to_d:
+                                    continue
+                            filtered.append(t)
+                    return filtered
+                
+                return transcripts
         except Exception as e:
             print(f"Fireflies API Error - get_transcripts: {e}")
             return []
@@ -136,9 +118,6 @@ class FirefliesClient:
                         }
                         speakers {
                             name
-                            talk_time
-                            words_per_minute
-                            filler_words
                         }
                     }
                     sentences {

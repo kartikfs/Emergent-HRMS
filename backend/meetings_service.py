@@ -52,33 +52,56 @@ class MeetingsService:
     
     async def _process_attio_meeting(self, meeting_data: Dict[str, Any]) -> Meeting:
         """Convert Attio meeting data to Meeting model"""
+        
+        # Attio ID structure is nested
+        meeting_id_obj = meeting_data.get("id", {})
+        meeting_id = meeting_id_obj.get("meeting_id") if isinstance(meeting_id_obj, dict) else str(meeting_id_obj)
+        
+        # Parse start/end times from Attio format
+        start_obj = meeting_data.get("start", {})
+        start_time = start_obj.get("datetime") if isinstance(start_obj, dict) else meeting_data.get("start")
+        
+        end_obj = meeting_data.get("end", {})
+        end_time = end_obj.get("datetime") if isinstance(end_obj, dict) else meeting_data.get("end")
+        
+        # Calculate duration
+        duration = None
+        if start_time and end_time:
+            try:
+                from dateutil import parser
+                start = parser.parse(start_time)
+                end = parser.parse(end_time)
+                duration = int((end - start).total_seconds() / 60)
+            except:
+                pass
+        
+        # Process participants
         participants = []
         for p in meeting_data.get("participants", []):
-            participants.append(MeetingParticipant(
-                name=p.get("name", ""),
-                email=p.get("email", ""),
-                role=p.get("role")
-            ))
+            name = p.get("name", p.get("email_address", "Unknown").split('@')[0])
+            email = p.get("email_address", p.get("email", ""))
+            if email:
+                participants.append(MeetingParticipant(
+                    name=name,
+                    email=email,
+                    role="organizer" if p.get("is_organizer") else "participant"
+                ))
         
-        duration = None
-        if meeting_data.get("end_at") and meeting_data.get("start_at"):
-            start = parser.parse(meeting_data["start_at"])
-            end = parser.parse(meeting_data["end_at"])
-            duration = int((end - start).total_seconds() / 60)
+        # Check for call recordings
+        has_recordings = len(meeting_data.get("call_recordings", [])) > 0
         
         return Meeting(
-            id=f"attio_{meeting_data['meeting_id']}",
+            id=f"attio_{meeting_id}",
             source="attio",
-            attio_id=meeting_data["meeting_id"],
+            attio_id=meeting_id,
             title=meeting_data.get("title", "Untitled Meeting"),
-            start_time=meeting_data["start_at"],
-            end_time=meeting_data.get("end_at"),
+            start_time=start_time,
+            end_time=end_time,
             duration_minutes=duration,
             participants=participants,
-            has_recording=len(meeting_data.get("call_recording_ids", [])) > 0,
-            has_transcript=len(meeting_data.get("call_recording_ids", [])) > 0,
-            linked_companies=meeting_data.get("linked_companies", []),
-            linked_contacts=meeting_data.get("linked_contacts", []),
+            has_recording=has_recordings,
+            has_transcript=has_recordings,
+            linked_companies=[r.get("record_id") for r in meeting_data.get("linked_records", []) if r.get("object_slug") == "companies"],
             raw_data=meeting_data
         )
     
