@@ -14,6 +14,7 @@ from datetime import datetime, timezone, date, timedelta
 import io
 import base64
 import jwt
+from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
 from passlib.context import CryptContext
 import sys
 sys.path.append('/app/backend')
@@ -63,11 +64,15 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
             raise HTTPException(status_code=401, detail="Invalid authentication credentials")
         employee = await db.employees.find_one({"id": employee_id}, {"_id": 0})
         if employee is None:
-            raise HTTPException(status_code=401, detail="User not found")
+            # Check if it's an admin
+            admin = await db.admin_users.find_one({"id": employee_id}, {"_id": 0})
+            if admin is None:
+                raise HTTPException(status_code=401, detail="User not found")
+            return admin
         return employee
-    except jwt.ExpiredSignatureError:
+    except ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token has expired")
-    except jwt.JWTError:
+    except InvalidTokenError:
         raise HTTPException(status_code=401, detail="Could not validate credentials")
 
 # ============ MODELS ============
@@ -405,6 +410,93 @@ async def reset_password(reset_request: PasswordResetRequest):
     )
     
     return {"message": "Password reset successfully"}
+
+# ============ ADMIN MANAGEMENT ROUTES ============
+
+@api_router.get("/admin/users")
+async def get_all_users(current_user: dict = Depends(get_current_user)):
+    """Get all users (admins and employees) - Admin only"""
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    # Get all admins
+    admins = await db.admin_users.find({}, {"_id": 0, "hashed_password": 0}).to_list(1000)
+    for admin in admins:
+        admin["user_type"] = "admin"
+    
+    # Get all employees
+    employees = await db.employees.find({}, {"_id": 0, "hashed_password": 0}).to_list(1000)
+    for employee in employees:
+        employee["user_type"] = "employee"
+    
+    return {
+        "admins": admins,
+        "employees": employees,
+        "total_admins": len(admins),
+        "total_employees": len(employees),
+        "total_users": len(admins) + len(employees)
+    }
+
+@api_router.get("/admin/list")
+async def get_all_admins(current_user: dict = Depends(get_current_user)):
+    """Get all admin users - Admin only"""
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    admins = await db.admin_users.find({}, {"_id": 0, "hashed_password": 0}).to_list(1000)
+    return admins
+
+@api_router.delete("/admin/{admin_id}")
+async def delete_admin(admin_id: str, current_user: dict = Depends(get_current_user)):
+    """Delete an admin user - Admin only"""
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    # Prevent self-deletion
+    if current_user.get("id") == admin_id:
+        raise HTTPException(status_code=400, detail="Cannot delete your own admin account")
+    
+    result = await db.admin_users.delete_one({"id": admin_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Admin not found")
+    
+    return {"message": "Admin deleted successfully"}
+
+@api_router.get("/admin/recent-signups")
+async def get_recent_signups(current_user: dict = Depends(get_current_user), days: int = 30):
+    """Get recently signed up users - Admin only"""
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    cutoff_date = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    
+    # Get recent admins
+    recent_admins = await db.admin_users.find(
+        {"created_at": {"$gte": cutoff_date}},
+        {"_id": 0, "hashed_password": 0}
+    ).sort("created_at", -1).to_list(100)
+    for admin in recent_admins:
+        admin["user_type"] = "admin"
+    
+    # Get recent employees
+    recent_employees = await db.employees.find(
+        {"created_at": {"$gte": cutoff_date}},
+        {"_id": 0, "hashed_password": 0}
+    ).sort("created_at", -1).to_list(100)
+    for employee in recent_employees:
+        employee["user_type"] = "employee"
+    
+    # Combine and sort by created_at
+    all_recent = recent_admins + recent_employees
+    all_recent.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+    
+    return {
+        "recent_signups": all_recent,
+        "total_recent": len(all_recent),
+        "recent_admins": len(recent_admins),
+        "recent_employees": len(recent_employees),
+        "days": days
+    }
 
 # ============ EMPLOYEE PORTAL ROUTES ============
 

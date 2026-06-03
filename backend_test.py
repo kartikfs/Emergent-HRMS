@@ -1,1565 +1,1135 @@
+#!/usr/bin/env python3
+"""
+Comprehensive Backend API Testing for PeopleHub HRMS
+Tests all authentication flows, admin management, and HR module APIs
+"""
+
 import requests
-import sys
 import json
 from datetime import datetime, timedelta
 
-class HRMSAPITester:
-    def __init__(self, base_url="https://workforce-hub-498.preview.emergentagent.com"):
-        self.base_url = base_url
-        self.api_url = f"{base_url}/api"
-        self.tests_run = 0
-        self.tests_passed = 0
-        self.test_results = []
-        self.created_entities = {
-            'employees': [],
-            'jobs': [],
-            'candidates': [],
-            'attendance': [],
-            'leaves': [],
-            'tasks': [],
-            'payroll': [],
-            'reviews': []
-        }
+# Configuration
+BASE_URL = "https://workforce-hub-498.preview.emergentagent.com/api"
 
-    def run_test(self, name, method, endpoint, expected_status, data=None, params=None):
-        """Run a single API test"""
-        url = f"{self.api_url}/{endpoint}"
-        headers = {'Content-Type': 'application/json'}
+# Test credentials from /app/memory/test_credentials.md
+ADMIN_EMAIL = "admin@peoplehub.com"
+ADMIN_PASSWORD = "admin123"
+SECONDARY_ADMIN_EMAIL = "hr.admin@peoplehub.com"
+SECONDARY_ADMIN_PASSWORD = "admin123"
+EMPLOYEE_EMAIL = "harper.thomas@peoplehub.com"
+EMPLOYEE_PASSWORD = "employee123"
 
-        self.tests_run += 1
-        print(f"\n🔍 Testing {name}...")
-        
-        try:
-            if method == 'GET':
-                response = requests.get(url, headers=headers, params=params)
-            elif method == 'POST':
-                response = requests.post(url, json=data, headers=headers)
-            elif method == 'PUT':
-                response = requests.put(url, json=data, headers=headers)
-            elif method == 'DELETE':
-                response = requests.delete(url, headers=headers)
+# Global variables to store tokens and IDs
+admin_token = None
+employee_token = None
+test_employee_id = None
+test_admin_id = None
+test_leave_id = None
+test_payroll_id = None
+test_attendance_id = None
+test_job_id = None
+test_candidate_id = None
+test_onboarding_task_id = None
+test_performance_review_id = None
 
-            success = response.status_code == expected_status
-            if success:
-                self.tests_passed += 1
-                print(f"✅ Passed - Status: {response.status_code}")
-                try:
-                    response_data = response.json() if response.content else {}
-                except:
-                    response_data = {}
-            else:
-                print(f"❌ Failed - Expected {expected_status}, got {response.status_code}")
-                try:
-                    error_detail = response.json() if response.content else {}
-                    print(f"   Error details: {error_detail}")
-                except:
-                    print(f"   Response text: {response.text}")
-                response_data = {}
+# Test results tracking
+test_results = {
+    "passed": 0,
+    "failed": 0,
+    "tests": []
+}
 
-            self.test_results.append({
-                'name': name,
-                'method': method,
-                'endpoint': endpoint,
-                'expected_status': expected_status,
-                'actual_status': response.status_code,
-                'success': success
-            })
-
-            return success, response_data
-
-        except Exception as e:
-            print(f"❌ Failed - Error: {str(e)}")
-            self.test_results.append({
-                'name': name,
-                'method': method,
-                'endpoint': endpoint,
-                'expected_status': expected_status,
-                'actual_status': 'ERROR',
-                'success': False,
-                'error': str(e)
-            })
-            return False, {}
-
-    def test_dashboard_stats(self):
-        """Test dashboard statistics endpoint"""
-        print("\n📊 Testing Dashboard Stats...")
-        success, data = self.run_test(
-            "Dashboard Stats",
-            "GET",
-            "dashboard/stats",
-            200
-        )
-        if success:
-            required_fields = ['total_employees', 'pending_leaves', 'open_positions', 'pending_onboarding_tasks']
-            for field in required_fields:
-                if field not in data:
-                    print(f"❌ Missing field: {field}")
-                    return False
-            print(f"📈 Stats: {data}")
-        return success
-
-    def test_employee_crud(self):
-        """Test employee CRUD operations"""
-        print("\n👥 Testing Employee Management...")
-        
-        # Create employee
-        employee_data = {
-            "first_name": "Sarah",
-            "last_name": "Johnson",
-            "email": "sarah.johnson@peoplehub.com",
-            "phone": "+1-555-0123",
-            "date_of_birth": "1992-05-20",
-            "gender": "Female",
-            "address": "456 Oak Avenue, San Francisco, CA 94102",
-            "department": "Engineering",
-            "position": "Senior Software Engineer",
-            "employment_type": "Full-time",
-            "join_date": "2025-01-15",
-            "salary": 95000.0,
-            "emergency_contact_name": "Michael Johnson",
-            "emergency_contact_phone": "+1-555-0124"
-        }
-        
-        success, emp_response = self.run_test(
-            "Create Employee",
-            "POST",
-            "employees",
-            200,
-            data=employee_data
-        )
-        
-        if not success:
-            return False
-            
-        employee_id = emp_response.get('id')
-        if employee_id:
-            self.created_entities['employees'].append(employee_id)
-            print(f"   Created employee ID: {employee_id}")
-        
-        # Get all employees
-        success, all_emps = self.run_test(
-            "Get All Employees",
-            "GET",
-            "employees",
-            200
-        )
-        
-        if not success:
-            return False
-        
-        print(f"   Total employees in database: {len(all_emps)}")
-        
-        # Test status filter - active employees
-        success, active_emps = self.run_test(
-            "Get Active Employees",
-            "GET",
-            "employees",
-            200,
-            params={"status": "active"}
-        )
-        
-        if not success:
-            return False
-        
-        print(f"   Active employees: {len(active_emps)}")
-        
-        # Test status filter - terminated employees
-        success, terminated_emps = self.run_test(
-            "Get Terminated Employees",
-            "GET",
-            "employees",
-            200,
-            params={"status": "terminated"}
-        )
-        
-        if not success:
-            return False
-        
-        print(f"   Terminated employees: {len(terminated_emps)}")
-            
-        # Get specific employee
-        if employee_id:
-            success, emp_detail = self.run_test(
-                "Get Employee by ID",
-                "GET",
-                f"employees/{employee_id}",
-                200
-            )
-            
-            if not success:
-                return False
-            
-            # Verify required fields are present
-            required_fields = ['id', 'first_name', 'last_name', 'email', 'department', 'position', 'status']
-            missing_fields = [field for field in required_fields if field not in emp_detail]
-            if missing_fields:
-                print(f"   ❌ Missing required fields: {missing_fields}")
-                return False
-            else:
-                print(f"   ✅ All required fields present in employee detail")
-                
-            # Update employee
-            update_data = employee_data.copy()
-            update_data['salary'] = 100000.0
-            success, _ = self.run_test(
-                "Update Employee",
-                "PUT",
-                f"employees/{employee_id}",
-                200,
-                data=update_data
-            )
-        
-        return success
+def log_test(test_name, passed, details=""):
+    """Log test result"""
+    status = "✅ PASS" if passed else "❌ FAIL"
+    print(f"{status}: {test_name}")
+    if details:
+        print(f"   Details: {details}")
     
-    def test_bulk_employee_import(self):
-        """Test bulk employee import with validation fix verification"""
-        print("\n📥 Testing Bulk Employee Import with Validation...")
-        print("=" * 70)
-        
-        # Get initial employee count
-        success, emps_before = self.run_test(
-            "Get Employee Count Before Tests",
-            "GET",
-            "employees",
-            200
-        )
-        
-        if not success:
-            return False
-        
-        count_before = len(emps_before)
-        print(f"   📊 Initial employee count: {count_before}\n")
-        
-        # ===== TEST 1: Valid Bulk Import (Should succeed) =====
-        print("🧪 TEST 1: Valid Bulk Import (2 complete employee records)")
-        print("-" * 70)
-        
-        valid_employees = [
-            {
-                "first_name": "Emily",
-                "last_name": "Rodriguez",
-                "email": "emily.rodriguez@peoplehub.com",
-                "phone": "+1-555-0201",
-                "date_of_birth": "1988-03-12",
-                "gender": "Female",
-                "address": "789 Pine Street, Austin, TX 78701",
-                "department": "Marketing",
-                "position": "Marketing Manager",
-                "employment_type": "Full-time",
-                "join_date": "2025-02-01",
-                "salary": 85000.0
-            },
-            {
-                "first_name": "David",
-                "last_name": "Chen",
-                "email": "david.chen@peoplehub.com",
-                "phone": "+1-555-0301",
-                "date_of_birth": "1995-07-25",
-                "gender": "Male",
-                "address": "321 Maple Drive, Seattle, WA 98101",
-                "department": "Sales",
-                "position": "Sales Representative",
-                "employment_type": "Full-time",
-                "join_date": "2025-02-15",
-                "salary": 65000.0
-            }
-        ]
-        
-        success, bulk_response = self.run_test(
-            "Valid Bulk Import",
-            "POST",
-            "employees/bulk",
-            200,
-            data={"employees": valid_employees}
-        )
-        
-        if not success:
-            print("   ❌ TEST 1 FAILED: Valid bulk import should succeed")
-            return False
-        
-        added_count = bulk_response.get('added', 0)
-        total_count = bulk_response.get('total', 0)
-        failed_count = bulk_response.get('failed', 0)
-        
-        print(f"   📈 Result: {added_count}/{total_count} added, {failed_count} failed")
-        
-        if added_count != 2:
-            print(f"   ❌ TEST 1 FAILED: Expected 2 employees added, got {added_count}")
-            return False
-        
-        # Verify database count
-        success, emps_after_test1 = self.run_test(
-            "Verify Database After Test 1",
-            "GET",
-            "employees",
-            200
-        )
-        
-        if not success:
-            return False
-        
-        count_after_test1 = len(emps_after_test1)
-        expected_count = count_before + 2
-        
-        if count_after_test1 != expected_count:
-            print(f"   ❌ TEST 1 FAILED: Database count mismatch - expected {expected_count}, got {count_after_test1}")
-            return False
-        
-        print(f"   ✅ TEST 1 PASSED: 2 valid employees successfully added to database")
-        print(f"   📊 Database count: {count_before} → {count_after_test1}\n")
-        
-        # ===== TEST 2: Invalid Data - Missing Required Fields (Should fail validation) =====
-        print("🧪 TEST 2: Invalid Data - Missing Required Fields")
-        print("-" * 70)
-        
-        invalid_employees = [
-            {
-                "first_name": "Invalid",
-                "last_name": "Employee",
-                "phone": "+1-555-9999"
-                # Missing: email, department, position, employment_type, join_date, salary, etc.
-            }
-        ]
-        
-        success, invalid_response = self.run_test(
-            "Invalid Data - Missing Fields",
-            "POST",
-            "employees/bulk",
-            400,  # Should return 400 for all invalid records
-            data={"employees": invalid_employees}
-        )
-        
-        if not success:
-            print("   ❌ TEST 2 FAILED: Should return 400 status for invalid data")
-            return False
-        
-        # Check that error details are provided
-        error_detail = invalid_response.get('detail', {})
-        if isinstance(error_detail, dict):
-            errors = error_detail.get('errors', [])
-        else:
-            errors = []
-        
-        if not errors:
-            print("   ❌ TEST 2 FAILED: Should provide detailed error messages")
-            return False
-        
-        print(f"   📋 Validation errors returned: {len(errors)}")
-        for error in errors:
-            print(f"      • {error}")
-        
-        # Verify NO invalid records were inserted
-        success, emps_after_test2 = self.run_test(
-            "Verify Database After Test 2",
-            "GET",
-            "employees",
-            200
-        )
-        
-        if not success:
-            return False
-        
-        count_after_test2 = len(emps_after_test2)
-        
-        if count_after_test2 != count_after_test1:
-            print(f"   ❌ TEST 2 FAILED: Invalid record was inserted! Count changed from {count_after_test1} to {count_after_test2}")
-            return False
-        
-        print(f"   ✅ TEST 2 PASSED: Invalid data rejected, no records inserted")
-        print(f"   📊 Database count unchanged: {count_after_test2}\n")
-        
-        # ===== TEST 3: Mixed Valid and Invalid Data (Partial success) =====
-        print("🧪 TEST 3: Mixed Valid and Invalid Data")
-        print("-" * 70)
-        
-        mixed_employees = [
-            {
-                "first_name": "Amanda",
-                "last_name": "Williams",
-                "email": "amanda.williams@peoplehub.com",
-                "phone": "+1-555-0401",
-                "date_of_birth": "1991-11-08",
-                "gender": "Female",
-                "address": "654 Elm Boulevard, Boston, MA 02101",
-                "department": "HR",
-                "position": "HR Specialist",
-                "employment_type": "Full-time",
-                "join_date": "2025-01-20",
-                "salary": 72000.0
-            },
-            {
-                "first_name": "Invalid",
-                "last_name": "Record"
-                # Missing required fields
-            },
-            {
-                "first_name": "Michael",
-                "last_name": "Brown",
-                "email": "michael.brown@peoplehub.com",
-                "phone": "+1-555-0501",
-                "date_of_birth": "1990-09-15",
-                "gender": "Male",
-                "address": "987 Cedar Lane, Denver, CO 80201",
-                "department": "Finance",
-                "position": "Financial Analyst",
-                "employment_type": "Full-time",
-                "join_date": "2025-02-10",
-                "salary": 78000.0
-            }
-        ]
-        
-        success, mixed_response = self.run_test(
-            "Mixed Valid and Invalid Data",
-            "POST",
-            "employees/bulk",
-            200,  # Returns 200 with partial success
-            data={"employees": mixed_employees}
-        )
-        
-        if not success:
-            print("   ❌ TEST 3 FAILED: Should return 200 for partial success")
-            return False
-        
-        added_count = mixed_response.get('added', 0)
-        total_count = mixed_response.get('total', 0)
-        failed_count = mixed_response.get('failed', 0)
-        errors = mixed_response.get('errors', [])
-        
-        print(f"   📈 Result: {added_count}/{total_count} added, {failed_count} failed")
-        
-        if added_count != 2:
-            print(f"   ❌ TEST 3 FAILED: Expected 2 valid employees added, got {added_count}")
-            return False
-        
-        if failed_count != 1:
-            print(f"   ❌ TEST 3 FAILED: Expected 1 failed record, got {failed_count}")
-            return False
-        
-        if not errors:
-            print("   ❌ TEST 3 FAILED: Should provide error details for failed record")
-            return False
-        
-        print(f"   📋 Errors for failed records:")
-        for error in errors:
-            print(f"      • {error}")
-        
-        # Verify only valid records were inserted
-        success, emps_after_test3 = self.run_test(
-            "Verify Database After Test 3",
-            "GET",
-            "employees",
-            200
-        )
-        
-        if not success:
-            return False
-        
-        count_after_test3 = len(emps_after_test3)
-        expected_count = count_after_test2 + 2
-        
-        if count_after_test3 != expected_count:
-            print(f"   ❌ TEST 3 FAILED: Database count mismatch - expected {expected_count}, got {count_after_test3}")
-            return False
-        
-        print(f"   ✅ TEST 3 PASSED: Only 2 valid employees added, 1 invalid rejected")
-        print(f"   📊 Database count: {count_after_test2} → {count_after_test3}\n")
-        
-        # ===== TEST 4: Verify GET /api/employees Still Works =====
-        print("🧪 TEST 4: Verify GET /api/employees Still Works")
-        print("-" * 70)
-        
-        success, all_employees = self.run_test(
-            "GET All Employees",
-            "GET",
-            "employees",
-            200
-        )
-        
-        if not success:
-            print("   ❌ TEST 4 FAILED: GET /api/employees should return 200")
-            return False
-        
-        # Verify all employees have required fields (no invalid records breaking the API)
-        required_fields = ['id', 'first_name', 'last_name', 'email', 'department', 'position']
-        
-        for idx, emp in enumerate(all_employees):
-            missing_fields = [field for field in required_fields if field not in emp]
-            if missing_fields:
-                print(f"   ❌ TEST 4 FAILED: Employee {idx+1} missing fields: {missing_fields}")
-                return False
-        
-        print(f"   ✅ TEST 4 PASSED: GET /api/employees returns 200 OK")
-        print(f"   📊 All {len(all_employees)} employees have required fields")
-        print(f"   ✅ No invalid records breaking the listing API\n")
-        
-        # ===== FINAL SUMMARY =====
-        print("=" * 70)
-        print("🎉 ALL VALIDATION TESTS PASSED!")
-        print("=" * 70)
-        print("✅ Valid bulk import works correctly")
-        print("✅ Invalid data is rejected with detailed errors")
-        print("✅ Mixed data handled correctly (partial success)")
-        print("✅ GET /api/employees works without errors")
-        print("✅ No invalid records inserted into database")
-        print("=" * 70)
-        
-        return True
-
-    def test_attendance_management(self):
-        """Test attendance tracking"""
-        print("\n⏰ Testing Attendance Management...")
-        
-        if not self.created_entities['employees']:
-            print("❌ No employees available for attendance testing")
-            return False
-            
-        employee_id = self.created_entities['employees'][0]
-        
-        # Create attendance record
-        attendance_data = {
-            "employee_id": employee_id,
-            "date": datetime.now().strftime("%Y-%m-%d"),
-            "check_in": "09:00",
-            "check_out": "17:00",
-            "status": "present",
-            "notes": "Regular working day"
-        }
-        
-        success, att_response = self.run_test(
-            "Create Attendance",
-            "POST",
-            "attendance",
-            200,
-            data=attendance_data
-        )
-        
-        if success and att_response.get('id'):
-            self.created_entities['attendance'].append(att_response['id'])
-        
-        # Get attendance records
-        success, _ = self.run_test(
-            "Get Attendance Records",
-            "GET",
-            "attendance",
-            200
-        )
-        
-        return success
-
-    def test_leave_management(self):
-        """Test leave request and approval workflow"""
-        print("\n🏖️ Testing Leave Management...")
-        
-        if not self.created_entities['employees']:
-            print("❌ No employees available for leave testing")
-            return False
-            
-        employee_id = self.created_entities['employees'][0]
-        
-        # Create leave request
-        leave_data = {
-            "employee_id": employee_id,
-            "leave_type": "vacation",
-            "start_date": (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d"),
-            "end_date": (datetime.now() + timedelta(days=32)).strftime("%Y-%m-%d"),
-            "days_count": 3.0,
-            "reason": "Family vacation"
-        }
-        
-        success, leave_response = self.run_test(
-            "Create Leave Request",
-            "POST",
-            "leave-requests",
-            200,
-            data=leave_data
-        )
-        
-        if not success:
-            return False
-            
-        leave_id = leave_response.get('id')
-        if leave_id:
-            self.created_entities['leaves'].append(leave_id)
-            
-            # Approve leave request
-            approval_data = {
-                "status": "approved",
-                "approved_by": "HR Manager"
-            }
-            
-            success, _ = self.run_test(
-                "Approve Leave Request",
-                "PUT",
-                f"leave-requests/{leave_id}/approve",
-                200,
-                data=approval_data
-            )
-        
-        # Get leave requests
-        success, _ = self.run_test(
-            "Get Leave Requests",
-            "GET",
-            "leave-requests",
-            200
-        )
-        
-        return success
-
-    def test_recruitment_workflow(self):
-        """Test job posting and candidate management"""
-        print("\n💼 Testing Recruitment Workflow...")
-        
-        # Create job posting
-        job_data = {
-            "title": "Senior Software Engineer",
-            "department": "Engineering",
-            "location": "Remote",
-            "employment_type": "Full-time",
-            "salary_range": "$90k - $120k",
-            "description": "We are looking for a senior software engineer to join our team.",
-            "requirements": "5+ years of experience in software development",
-            "posted_by": "HR Team"
-        }
-        
-        success, job_response = self.run_test(
-            "Create Job Posting",
-            "POST",
-            "job-postings",
-            200,
-            data=job_data
-        )
-        
-        if not success:
-            return False
-            
-        job_id = job_response.get('id')
-        if job_id:
-            self.created_entities['jobs'].append(job_id)
-            
-            # Add candidate
-            candidate_data = {
-                "job_id": job_id,
-                "full_name": "Alice Smith",
-                "email": "alice.smith@test.com",
-                "phone": "+1234567892",
-                "experience_years": 6.0,
-                "current_company": "Tech Corp",
-                "expected_salary": 100000.0
-            }
-            
-            success, cand_response = self.run_test(
-                "Add Candidate",
-                "POST",
-                "candidates",
-                200,
-                data=candidate_data
-            )
-            
-            if success and cand_response.get('id'):
-                candidate_id = cand_response['id']
-                self.created_entities['candidates'].append(candidate_id)
-                
-                # Update candidate stage
-                stage_data = {
-                    "stage": "interview",
-                    "notes": "Passed initial screening"
-                }
-                
-                success, _ = self.run_test(
-                    "Update Candidate Stage",
-                    "PUT",
-                    f"candidates/{candidate_id}/stage",
-                    200,
-                    data=stage_data
-                )
-        
-        # Get job postings and candidates
-        success1, _ = self.run_test("Get Job Postings", "GET", "job-postings", 200)
-        success2, _ = self.run_test("Get Candidates", "GET", "candidates", 200)
-        
-        return success and success1 and success2
-
-    def test_onboarding_tasks(self):
-        """Test onboarding task management"""
-        print("\n📋 Testing Onboarding Tasks...")
-        
-        if not self.created_entities['employees']:
-            print("❌ No employees available for onboarding testing")
-            return False
-            
-        employee_id = self.created_entities['employees'][0]
-        
-        # Create onboarding task
-        task_data = {
-            "employee_id": employee_id,
-            "task_title": "Complete IT Setup",
-            "task_description": "Set up laptop, accounts, and access permissions",
-            "due_date": (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d"),
-            "assigned_to": "IT Team"
-        }
-        
-        success, task_response = self.run_test(
-            "Create Onboarding Task",
-            "POST",
-            "onboarding-tasks",
-            200,
-            data=task_data
-        )
-        
-        if not success:
-            return False
-            
-        task_id = task_response.get('id')
-        if task_id:
-            self.created_entities['tasks'].append(task_id)
-            
-            # Update task status
-            status_data = {
-                "status": "completed"
-            }
-            
-            success, _ = self.run_test(
-                "Update Task Status",
-                "PUT",
-                f"onboarding-tasks/{task_id}/status",
-                200,
-                data=status_data
-            )
-        
-        # Get onboarding tasks
-        success, _ = self.run_test(
-            "Get Onboarding Tasks",
-            "GET",
-            "onboarding-tasks",
-            200
-        )
-        
-        return success
-
-    def test_payroll_management(self):
-        """Test payroll processing"""
-        print("\n💰 Testing Payroll Management...")
-        
-        if not self.created_entities['employees']:
-            print("❌ No employees available for payroll testing")
-            return False
-            
-        employee_id = self.created_entities['employees'][0]
-        
-        # Create payroll record
-        payroll_data = {
-            "employee_id": employee_id,
-            "month": datetime.now().strftime("%Y-%m"),
-            "basic_salary": 75000.0,
-            "allowances": 5000.0,
-            "deductions": 2000.0,
-            "tax": 8000.0,
-            "net_salary": 70000.0,
-            "payment_date": datetime.now().strftime("%Y-%m-%d"),
-            "payment_status": "paid"
-        }
-        
-        success, payroll_response = self.run_test(
-            "Create Payroll Record",
-            "POST",
-            "payroll",
-            200,
-            data=payroll_data
-        )
-        
-        if success and payroll_response.get('id'):
-            self.created_entities['payroll'].append(payroll_response['id'])
-        
-        # Get payroll records
-        success, _ = self.run_test(
-            "Get Payroll Records",
-            "GET",
-            "payroll",
-            200
-        )
-        
-        return success
-
-    def test_performance_reviews(self):
-        """Test performance review system"""
-        print("\n⭐ Testing Performance Reviews...")
-        
-        if not self.created_entities['employees']:
-            print("❌ No employees available for performance testing")
-            return False
-            
-        employee_id = self.created_entities['employees'][0]
-        
-        # Create performance review
-        review_data = {
-            "employee_id": employee_id,
-            "reviewer_id": "HR Manager",
-            "review_period": "Q1 2025",
-            "goals": "Complete project deliverables and improve team collaboration",
-            "achievements": "Successfully delivered 3 major features ahead of schedule",
-            "areas_of_improvement": "Could improve documentation and code review practices",
-            "rating": 4.0,
-            "feedback": "Excellent performance with room for growth in technical leadership"
-        }
-        
-        success, review_response = self.run_test(
-            "Create Performance Review",
-            "POST",
-            "performance-reviews",
-            200,
-            data=review_data
-        )
-        
-        if success and review_response.get('id'):
-            self.created_entities['reviews'].append(review_response['id'])
-        
-        # Get performance reviews
-        success, _ = self.run_test(
-            "Get Performance Reviews",
-            "GET",
-            "performance-reviews",
-            200
-        )
-        
-        return success
-
-    def run_all_tests(self):
-        """Run all API tests"""
-        print("🚀 Starting HRMS API Testing...")
-        print(f"🌐 Testing against: {self.base_url}")
-        
-        # Test order matters for dependencies
-        test_methods = [
-            self.test_dashboard_stats,
-            self.test_employee_crud,
-            self.test_bulk_employee_import,
-            self.test_attendance_management,
-            self.test_leave_management,
-            self.test_recruitment_workflow,
-            self.test_onboarding_tasks,
-            self.test_payroll_management,
-            self.test_performance_reviews
-        ]
-        
-        failed_tests = []
-        
-        for test_method in test_methods:
-            try:
-                if not test_method():
-                    failed_tests.append(test_method.__name__)
-            except Exception as e:
-                print(f"❌ Test {test_method.__name__} crashed: {str(e)}")
-                failed_tests.append(test_method.__name__)
-        
-        # Print final results
-        print(f"\n📊 Final Results:")
-        print(f"✅ Tests passed: {self.tests_passed}/{self.tests_run}")
-        print(f"📈 Success rate: {(self.tests_passed/self.tests_run)*100:.1f}%")
-        
-        if failed_tests:
-            print(f"\n❌ Failed test modules: {', '.join(failed_tests)}")
-        
-        return self.tests_passed == self.tests_run
+    test_results["tests"].append({
+        "name": test_name,
+        "passed": passed,
+        "details": details
+    })
     
-    def run_employee_tests_only(self):
-        """Run only employee-related tests as requested"""
-        print("🚀 Starting Employee Management API Testing...")
-        print(f"🌐 Testing against: {self.base_url}")
-        print(f"📋 Focus: Employee CRUD and Bulk Import APIs\n")
-        
-        # Test order matters for dependencies
-        test_methods = [
-            self.test_employee_crud,
-            self.test_bulk_employee_import
-        ]
-        
-        failed_tests = []
-        
-        for test_method in test_methods:
-            try:
-                if not test_method():
-                    failed_tests.append(test_method.__name__)
-            except Exception as e:
-                print(f"❌ Test {test_method.__name__} crashed: {str(e)}")
-                failed_tests.append(test_method.__name__)
-        
-        # Print final results
-        print(f"\n📊 Final Results:")
-        print(f"✅ Tests passed: {self.tests_passed}/{self.tests_run}")
-        print(f"📈 Success rate: {(self.tests_passed/self.tests_run)*100:.1f}%")
-        
-        if failed_tests:
-            print(f"\n❌ Failed test modules: {', '.join(failed_tests)}")
-        
-        return self.tests_passed == self.tests_run
-
-    def test_authentication_flows(self):
-        """Test P0 Priority: Employee Signup Verification and Authentication"""
-        print("\n🔐 Testing Authentication Flows (P0 Priority)...")
-        print("=" * 70)
-        
-        # ===== TEST 1: Employee Signup (P0 Priority) =====
-        print("🧪 TEST 1: Employee Signup Verification (P0 Priority)")
-        print("-" * 70)
-        
-        import time
-        unique_email = f"test.employee{int(time.time())}@peoplehub.com"
-        employee_signup_data = {
-            "email": unique_email,
-            "password": "testpass123",
-            "first_name": "Test",
-            "last_name": "Employee",
-            "phone": "+1-555-123-4567",
-            "date_of_birth": "1990-01-15",
-            "gender": "Male",
-            "address": "123 Test St, Test City, NY 10001",
-            "department": "Engineering",
-            "position": "Software Engineer",
-            "employment_type": "Full-time",
-            "join_date": "2025-01-01",
-            "emergency_contact_name": "Emergency Contact",
-            "emergency_contact_phone": "+1-555-999-8888"
-        }
-        
-        success, signup_response = self.run_test(
-            "Employee Signup",
-            "POST",
-            "auth/employee/signup",
-            200,
-            data=employee_signup_data
-        )
-        
-        if not success:
-            print("   ❌ TEST 1 FAILED: Employee signup should succeed")
-            return False
-        
-        # Verify response structure
-        required_fields = ['token', 'user', 'role', 'message']
-        missing_fields = [field for field in required_fields if field not in signup_response]
-        if missing_fields:
-            print(f"   ❌ TEST 1 FAILED: Missing response fields: {missing_fields}")
-            return False
-        
-        if signup_response.get('role') != 'employee':
-            print(f"   ❌ TEST 1 FAILED: Expected role 'employee', got '{signup_response.get('role')}'")
-            return False
-        
-        employee_token = signup_response.get('token')
-        employee_user = signup_response.get('user', {})
-        employee_id = employee_user.get('id')
-        
-        print(f"   ✅ Employee signup successful")
-        print(f"   📧 Email: {employee_user.get('email')}")
-        print(f"   🆔 Employee ID: {employee_id}")
-        print(f"   🎫 Token received: {'Yes' if employee_token else 'No'}")
-        
-        # ===== TEST 2: Employee Login with New Credentials =====
-        print("\n🧪 TEST 2: Employee Login with New Credentials")
-        print("-" * 70)
-        
-        login_data = {
-            "email": unique_email,
-            "password": "testpass123"
-        }
-        
-        success, login_response = self.run_test(
-            "Employee Login",
-            "POST",
-            "auth/login",
-            200,
-            data=login_data
-        )
-        
-        if not success:
-            print("   ❌ TEST 2 FAILED: Employee login should succeed")
-            return False
-        
-        # Verify login response
-        if login_response.get('role') != 'employee':
-            print(f"   ❌ TEST 2 FAILED: Expected role 'employee', got '{login_response.get('role')}'")
-            return False
-        
-        login_token = login_response.get('token')
-        if not login_token:
-            print("   ❌ TEST 2 FAILED: No token returned in login response")
-            return False
-        
-        print(f"   ✅ Employee login successful")
-        print(f"   🎫 Token received: Yes")
-        
-        # ===== TEST 3: Admin Login (Fixed Password Hash) =====
-        print("\n🧪 TEST 3: Admin Login (Fixed Password Hash)")
-        print("-" * 70)
-        
-        admin_login_data = {
-            "email": "admin@peoplehub.com",
-            "password": "password"
-        }
-        
-        success, admin_login_response = self.run_test(
-            "Admin Login",
-            "POST",
-            "auth/login",
-            200,
-            data=admin_login_data
-        )
-        
-        if not success:
-            print("   ❌ TEST 3 FAILED: Admin login should succeed")
-            return False
-        
-        if admin_login_response.get('role') != 'admin':
-            print(f"   ❌ TEST 3 FAILED: Expected role 'admin', got '{admin_login_response.get('role')}'")
-            return False
-        
-        admin_token = admin_login_response.get('token')
-        print(f"   ✅ Admin login successful")
-        print(f"   🎫 Token received: {'Yes' if admin_token else 'No'}")
-        
-        # ===== TEST 4: Admin Signup =====
-        print("\n🧪 TEST 4: Admin Signup")
-        print("-" * 70)
-        
-        import time
-        unique_email = f"newadmin{int(time.time())}@peoplehub.com"
-        admin_signup_data = {
-            "email": unique_email,
-            "password": "admin123",
-            "full_name": "New Admin"
-        }
-        
-        success, admin_signup_response = self.run_test(
-            "Admin Signup",
-            "POST",
-            "auth/admin/signup",
-            200,
-            data=admin_signup_data
-        )
-        
-        if not success:
-            print("   ❌ TEST 4 FAILED: Admin signup should succeed")
-            return False
-        
-        if admin_signup_response.get('role') != 'admin':
-            print(f"   ❌ TEST 4 FAILED: Expected role 'admin', got '{admin_signup_response.get('role')}'")
-            return False
-        
-        new_admin_token = admin_signup_response.get('token')
-        print(f"   ✅ Admin signup successful")
-        print(f"   🎫 Token received: {'Yes' if new_admin_token else 'No'}")
-        
-        # ===== TEST 5: Token-based Authentication =====
-        print("\n🧪 TEST 5: Token-based Authentication")
-        print("-" * 70)
-        
-        # Test employee profile access with token
-        headers = {'Authorization': f'Bearer {employee_token}'}
-        url = f"{self.api_url}/employee/profile"
-        
-        try:
-            response = requests.get(url, headers=headers)
-            if response.status_code == 200:
-                profile_data = response.json()
-                print(f"   ✅ Employee profile access successful")
-                print(f"   👤 Profile: {profile_data.get('first_name')} {profile_data.get('last_name')}")
-                print(f"   📧 Email: {profile_data.get('email')}")
-            else:
-                print(f"   ❌ TEST 5 FAILED: Profile access failed with status {response.status_code}")
-                return False
-        except Exception as e:
-            print(f"   ❌ TEST 5 FAILED: Profile access error: {str(e)}")
-            return False
-        
-        print("\n=" * 70)
-        print("🎉 ALL AUTHENTICATION TESTS PASSED!")
-        print("=" * 70)
-        print("✅ Employee signup working correctly (P0 Priority)")
-        print("✅ Employee login working with new credentials")
-        print("✅ Admin login working with fixed password hash")
-        print("✅ Admin signup working correctly")
-        print("✅ Token-based authentication working")
-        print("=" * 70)
-        
-        return True
-
-    def test_employee_management_endpoints(self):
-        """Test Employee Management Endpoints with Authentication"""
-        print("\n👥 Testing Employee Management Endpoints...")
-        print("=" * 70)
-        
-        # First, get an admin token for authenticated requests
-        admin_login_data = {
-            "email": "admin@peoplehub.com",
-            "password": "password"
-        }
-        
-        success, admin_login_response = self.run_test(
-            "Admin Login for Employee Management",
-            "POST",
-            "auth/login",
-            200,
-            data=admin_login_data
-        )
-        
-        if not success:
-            print("   ❌ Cannot proceed without admin authentication")
-            return False
-        
-        admin_token = admin_login_response.get('token')
-        
-        # ===== TEST 1: GET /api/employees - List All Employees =====
-        print("\n🧪 TEST 1: GET /api/employees - List All Employees")
-        print("-" * 70)
-        
-        success, all_employees = self.run_test(
-            "Get All Employees",
-            "GET",
-            "employees",
-            200
-        )
-        
-        if not success:
-            return False
-        
-        print(f"   📊 Total employees found: {len(all_employees)}")
-        
-        # Verify employee structure
-        if all_employees:
-            sample_emp = all_employees[0]
-            required_fields = ['id', 'first_name', 'last_name', 'email', 'department', 'position', 'status']
-            missing_fields = [field for field in required_fields if field not in sample_emp]
-            if missing_fields:
-                print(f"   ❌ TEST 1 FAILED: Missing employee fields: {missing_fields}")
-                return False
-            print(f"   ✅ Employee structure valid")
-        
-        # ===== TEST 2: GET /api/employees/{employee_id} - Get Specific Employee =====
-        print("\n🧪 TEST 2: GET /api/employees/{employee_id} - Get Specific Employee")
-        print("-" * 70)
-        
-        if all_employees:
-            employee_id = all_employees[0]['id']
-            success, employee_detail = self.run_test(
-                "Get Employee by ID",
-                "GET",
-                f"employees/{employee_id}",
-                200
-            )
-            
-            if not success:
-                return False
-            
-            print(f"   👤 Employee: {employee_detail.get('first_name')} {employee_detail.get('last_name')}")
-            print(f"   🏢 Department: {employee_detail.get('department')}")
-            print(f"   💼 Position: {employee_detail.get('position')}")
-        else:
-            print("   ⚠️ No employees available for individual testing")
-        
-        # ===== TEST 3: POST /api/employees/bulk - CSV Bulk Import Validation =====
-        print("\n🧪 TEST 3: POST /api/employees/bulk - CSV Bulk Import Validation")
-        print("-" * 70)
-        
-        # Test with valid bulk data
-        bulk_employees = [
-            {
-                "first_name": "Bulk",
-                "last_name": "Employee1",
-                "email": "bulk1@peoplehub.com",
-                "phone": "+1-555-0001",
-                "date_of_birth": "1985-06-15",
-                "gender": "Female",
-                "address": "100 Bulk St, Test City, CA 90210",
-                "department": "Marketing",
-                "position": "Marketing Coordinator",
-                "employment_type": "Full-time",
-                "join_date": "2025-01-15",
-                "salary": 60000.0
-            },
-            {
-                "first_name": "Bulk",
-                "last_name": "Employee2",
-                "email": "bulk2@peoplehub.com",
-                "phone": "+1-555-0002",
-                "date_of_birth": "1988-09-22",
-                "gender": "Male",
-                "address": "200 Bulk Ave, Test City, CA 90210",
-                "department": "Sales",
-                "position": "Sales Associate",
-                "employment_type": "Full-time",
-                "join_date": "2025-01-20",
-                "salary": 55000.0
-            }
-        ]
-        
-        success, bulk_response = self.run_test(
-            "Bulk Employee Import",
-            "POST",
-            "employees/bulk",
-            200,
-            data={"employees": bulk_employees}
-        )
-        
-        if not success:
-            return False
-        
-        added_count = bulk_response.get('added', 0)
-        total_count = bulk_response.get('total', 0)
-        print(f"   📈 Bulk import result: {added_count}/{total_count} employees added")
-        
-        if added_count != 2:
-            print(f"   ❌ TEST 3 FAILED: Expected 2 employees added, got {added_count}")
-            return False
-        
-        print(f"   ✅ Bulk import validation working correctly")
-        
-        print("\n=" * 70)
-        print("🎉 ALL EMPLOYEE MANAGEMENT TESTS PASSED!")
-        print("=" * 70)
-        print("✅ Employee listing working correctly")
-        print("✅ Individual employee retrieval working")
-        print("✅ Bulk import validation working")
-        print("=" * 70)
-        
-        return True
-
-    def test_leave_management_apis(self):
-        """Test Leave Management APIs (needs_retesting: true)"""
-        print("\n🏖️ Testing Leave Management APIs...")
-        print("=" * 70)
-        
-        # First create an employee for leave testing
-        employee_data = {
-            "first_name": "Leave",
-            "last_name": "Tester",
-            "email": "leave.tester@peoplehub.com",
-            "phone": "+1-555-LEAVE",
-            "date_of_birth": "1990-05-15",
-            "gender": "Female",
-            "address": "123 Leave St, Test City, CA 90210",
-            "department": "HR",
-            "position": "HR Specialist",
-            "employment_type": "Full-time",
-            "join_date": "2025-01-01",
-            "salary": 70000.0
-        }
-        
-        success, emp_response = self.run_test(
-            "Create Employee for Leave Testing",
-            "POST",
-            "employees",
-            200,
-            data=employee_data
-        )
-        
-        if not success:
-            return False
-        
-        employee_id = emp_response.get('id')
-        print(f"   👤 Created test employee: {employee_id}")
-        
-        # ===== TEST 1: Create Leave Request =====
-        print("\n🧪 TEST 1: Create Leave Request")
-        print("-" * 70)
-        
-        leave_data = {
-            "employee_id": employee_id,
-            "leave_type": "vacation",
-            "start_date": "2025-03-01",
-            "end_date": "2025-03-05",
-            "days_count": 5.0,
-            "reason": "Family vacation to Hawaii"
-        }
-        
-        success, leave_response = self.run_test(
-            "Create Leave Request",
-            "POST",
-            "leave-requests",
-            200,
-            data=leave_data
-        )
-        
-        if not success:
-            return False
-        
-        leave_id = leave_response.get('id')
-        print(f"   📝 Created leave request: {leave_id}")
-        print(f"   📅 Leave period: {leave_data['start_date']} to {leave_data['end_date']}")
-        print(f"   📊 Days: {leave_data['days_count']}")
-        
-        # ===== TEST 2: Get All Leave Requests =====
-        print("\n🧪 TEST 2: Get All Leave Requests")
-        print("-" * 70)
-        
-        success, all_leaves = self.run_test(
-            "Get All Leave Requests",
-            "GET",
-            "leave-requests",
-            200
-        )
-        
-        if not success:
-            return False
-        
-        print(f"   📊 Total leave requests: {len(all_leaves)}")
-        
-        # ===== TEST 3: Get Leave Requests by Employee =====
-        print("\n🧪 TEST 3: Get Leave Requests by Employee")
-        print("-" * 70)
-        
-        success, emp_leaves = self.run_test(
-            "Get Employee Leave Requests",
-            "GET",
-            "leave-requests",
-            200,
-            params={"employee_id": employee_id}
-        )
-        
-        if not success:
-            return False
-        
-        print(f"   📊 Employee leave requests: {len(emp_leaves)}")
-        
-        # ===== TEST 4: Get Leave Requests by Status =====
-        print("\n🧪 TEST 4: Get Leave Requests by Status")
-        print("-" * 70)
-        
-        success, pending_leaves = self.run_test(
-            "Get Pending Leave Requests",
-            "GET",
-            "leave-requests",
-            200,
-            params={"status": "pending"}
-        )
-        
-        if not success:
-            return False
-        
-        print(f"   📊 Pending leave requests: {len(pending_leaves)}")
-        
-        # ===== TEST 5: Approve Leave Request =====
-        print("\n🧪 TEST 5: Approve Leave Request")
-        print("-" * 70)
-        
-        if leave_id:
-            approval_data = {
-                "status": "approved",
-                "approved_by": "HR Manager"
-            }
-            
-            success, approved_leave = self.run_test(
-                "Approve Leave Request",
-                "PUT",
-                f"leave-requests/{leave_id}/approve",
-                200,
-                data=approval_data
-            )
-            
-            if not success:
-                return False
-            
-            print(f"   ✅ Leave request approved")
-            print(f"   👤 Approved by: {approved_leave.get('approved_by')}")
-            print(f"   📅 Approved at: {approved_leave.get('approved_at')}")
-        
-        print("\n=" * 70)
-        print("🎉 ALL LEAVE MANAGEMENT TESTS PASSED!")
-        print("=" * 70)
-        print("✅ Leave request creation working")
-        print("✅ Leave request listing working")
-        print("✅ Leave request filtering working")
-        print("✅ Leave request approval working")
-        print("=" * 70)
-        
-        return True
-
-    def test_payroll_apis(self):
-        """Test Payroll APIs (needs_retesting: true)"""
-        print("\n💰 Testing Payroll APIs...")
-        print("=" * 70)
-        
-        # First create an employee for payroll testing
-        employee_data = {
-            "first_name": "Payroll",
-            "last_name": "Tester",
-            "email": "payroll.tester@peoplehub.com",
-            "phone": "+1-555-PAY01",
-            "date_of_birth": "1985-08-20",
-            "gender": "Male",
-            "address": "456 Payroll Ave, Test City, CA 90210",
-            "department": "Finance",
-            "position": "Financial Analyst",
-            "employment_type": "Full-time",
-            "join_date": "2024-01-01",
-            "salary": 80000.0
-        }
-        
-        success, emp_response = self.run_test(
-            "Create Employee for Payroll Testing",
-            "POST",
-            "employees",
-            200,
-            data=employee_data
-        )
-        
-        if not success:
-            return False
-        
-        employee_id = emp_response.get('id')
-        print(f"   👤 Created test employee: {employee_id}")
-        
-        # ===== TEST 1: Create Payroll Record =====
-        print("\n🧪 TEST 1: Create Payroll Record")
-        print("-" * 70)
-        
-        payroll_data = {
-            "employee_id": employee_id,
-            "month": "2025-01",
-            "basic_salary": 80000.0,
-            "allowances": 5000.0,
-            "deductions": 2000.0,
-            "tax": 12000.0,
-            "net_salary": 71000.0,
-            "payment_date": "2025-01-31",
-            "payment_status": "paid"
-        }
-        
-        success, payroll_response = self.run_test(
-            "Create Payroll Record",
-            "POST",
-            "payroll",
-            200,
-            data=payroll_data
-        )
-        
-        if not success:
-            return False
-        
-        payroll_id = payroll_response.get('id')
-        print(f"   💰 Created payroll record: {payroll_id}")
-        print(f"   📅 Month: {payroll_data['month']}")
-        print(f"   💵 Net salary: ${payroll_data['net_salary']:,.2f}")
-        
-        # ===== TEST 2: Get All Payroll Records =====
-        print("\n🧪 TEST 2: Get All Payroll Records")
-        print("-" * 70)
-        
-        success, all_payroll = self.run_test(
-            "Get All Payroll Records",
-            "GET",
-            "payroll",
-            200
-        )
-        
-        if not success:
-            return False
-        
-        print(f"   📊 Total payroll records: {len(all_payroll)}")
-        
-        # ===== TEST 3: Get Payroll Records by Employee =====
-        print("\n🧪 TEST 3: Get Payroll Records by Employee")
-        print("-" * 70)
-        
-        success, emp_payroll = self.run_test(
-            "Get Employee Payroll Records",
-            "GET",
-            "payroll",
-            200,
-            params={"employee_id": employee_id}
-        )
-        
-        if not success:
-            return False
-        
-        print(f"   📊 Employee payroll records: {len(emp_payroll)}")
-        
-        # ===== TEST 4: Get Payroll Records by Month =====
-        print("\n🧪 TEST 4: Get Payroll Records by Month")
-        print("-" * 70)
-        
-        success, month_payroll = self.run_test(
-            "Get Monthly Payroll Records",
-            "GET",
-            "payroll",
-            200,
-            params={"month": "2025-01"}
-        )
-        
-        if not success:
-            return False
-        
-        print(f"   📊 January 2025 payroll records: {len(month_payroll)}")
-        
-        # ===== TEST 5: Update Payroll Record =====
-        print("\n🧪 TEST 5: Update Payroll Record")
-        print("-" * 70)
-        
-        if payroll_id:
-            updated_payroll_data = payroll_data.copy()
-            updated_payroll_data['allowances'] = 6000.0
-            updated_payroll_data['net_salary'] = 72000.0
-            
-            success, updated_payroll = self.run_test(
-                "Update Payroll Record",
-                "PUT",
-                f"payroll/{payroll_id}",
-                200,
-                data=updated_payroll_data
-            )
-            
-            if not success:
-                return False
-            
-            print(f"   ✅ Payroll record updated")
-            print(f"   💵 New allowances: ${updated_payroll.get('allowances', 0):,.2f}")
-            print(f"   💵 New net salary: ${updated_payroll.get('net_salary', 0):,.2f}")
-        
-        print("\n=" * 70)
-        print("🎉 ALL PAYROLL TESTS PASSED!")
-        print("=" * 70)
-        print("✅ Payroll record creation working")
-        print("✅ Payroll record listing working")
-        print("✅ Payroll record filtering working")
-        print("✅ Payroll record updating working")
-        print("=" * 70)
-        
-        return True
-
-def main():
-    tester = HRMSAPITester()
-    
-    print("🚀 Starting PeopleHub HRMS API Testing...")
-    print(f"🌐 Testing against: {tester.base_url}")
-    print("📋 Focus: P0 Employee Signup Verification & Authentication\n")
-    
-    # Test order matters for dependencies
-    test_methods = [
-        tester.test_authentication_flows,
-        tester.test_employee_management_endpoints,
-        tester.test_leave_management_apis,
-        tester.test_payroll_apis
-    ]
-    
-    failed_tests = []
-    
-    for test_method in test_methods:
-        try:
-            if not test_method():
-                failed_tests.append(test_method.__name__)
-        except Exception as e:
-            print(f"❌ Test {test_method.__name__} crashed: {str(e)}")
-            failed_tests.append(test_method.__name__)
-    
-    # Print final results
-    print(f"\n📊 Final Results:")
-    print(f"✅ Tests passed: {tester.tests_passed}/{tester.tests_run}")
-    print(f"📈 Success rate: {(tester.tests_passed/tester.tests_run)*100:.1f}%")
-    
-    if failed_tests:
-        print(f"\n❌ Failed test modules: {', '.join(failed_tests)}")
-        return 1
+    if passed:
+        test_results["passed"] += 1
     else:
-        print(f"\n🎉 All tests passed successfully!")
-        return 0
+        test_results["failed"] += 1
+
+def print_summary():
+    """Print test summary"""
+    total = test_results["passed"] + test_results["failed"]
+    print("\n" + "="*80)
+    print("TEST SUMMARY")
+    print("="*80)
+    print(f"Total Tests: {total}")
+    print(f"Passed: {test_results['passed']} ({test_results['passed']/total*100:.1f}%)")
+    print(f"Failed: {test_results['failed']} ({test_results['failed']/total*100:.1f}%)")
+    print("="*80)
+    
+    if test_results["failed"] > 0:
+        print("\nFailed Tests:")
+        for test in test_results["tests"]:
+            if not test["passed"]:
+                print(f"  ❌ {test['name']}")
+                if test["details"]:
+                    print(f"     {test['details']}")
+
+# ============ PRIORITY 1: AUTHENTICATION & USER MANAGEMENT ============
+
+def test_admin_login():
+    """Test 1: Admin Login Flow"""
+    global admin_token
+    
+    try:
+        response = requests.post(
+            f"{BASE_URL}/auth/login",
+            json={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD}
+        )
+        
+        if response.status_code == 200:
+            data = response.json()
+            if "token" in data and data.get("role") == "admin":
+                admin_token = data["token"]
+                log_test("Admin Login", True, f"Token received, role: {data['role']}")
+                return True
+            else:
+                log_test("Admin Login", False, "Missing token or incorrect role in response")
+                return False
+        else:
+            log_test("Admin Login", False, f"Status: {response.status_code}, Response: {response.text}")
+            return False
+    except Exception as e:
+        log_test("Admin Login", False, f"Exception: {str(e)}")
+        return False
+
+def test_admin_login_invalid_credentials():
+    """Test 2: Admin Login with Invalid Credentials"""
+    try:
+        response = requests.post(
+            f"{BASE_URL}/auth/login",
+            json={"email": ADMIN_EMAIL, "password": "wrongpassword"}
+        )
+        
+        if response.status_code == 401:
+            log_test("Admin Login - Invalid Credentials", True, "Correctly rejected with 401")
+            return True
+        else:
+            log_test("Admin Login - Invalid Credentials", False, f"Expected 401, got {response.status_code}")
+            return False
+    except Exception as e:
+        log_test("Admin Login - Invalid Credentials", False, f"Exception: {str(e)}")
+        return False
+
+def test_employee_login():
+    """Test 3: Employee Login Flow"""
+    global employee_token, test_employee_id
+    
+    try:
+        response = requests.post(
+            f"{BASE_URL}/auth/login",
+            json={"email": EMPLOYEE_EMAIL, "password": EMPLOYEE_PASSWORD}
+        )
+        
+        if response.status_code == 200:
+            data = response.json()
+            if "token" in data and data.get("role") == "employee":
+                employee_token = data["token"]
+                test_employee_id = data["user"].get("id")
+                log_test("Employee Login", True, f"Token received, role: {data['role']}, ID: {test_employee_id}")
+                return True
+            else:
+                log_test("Employee Login", False, "Missing token or incorrect role in response")
+                return False
+        else:
+            log_test("Employee Login", False, f"Status: {response.status_code}, Response: {response.text}")
+            return False
+    except Exception as e:
+        log_test("Employee Login", False, f"Exception: {str(e)}")
+        return False
+
+def test_admin_signup():
+    """Test 4: Admin Signup (Create New Admin)"""
+    global test_admin_id
+    
+    try:
+        # Generate unique email for new admin
+        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+        new_admin_email = f"test.admin.{timestamp}@peoplehub.com"
+        
+        response = requests.post(
+            f"{BASE_URL}/auth/admin/signup",
+            json={
+                "email": new_admin_email,
+                "password": "admin123",
+                "full_name": "Test Admin User"
+            }
+        )
+        
+        if response.status_code == 200:
+            data = response.json()
+            if "token" in data and data.get("role") == "admin":
+                test_admin_id = data["user"].get("id")
+                log_test("Admin Signup", True, f"New admin created: {new_admin_email}, ID: {test_admin_id}")
+                return True
+            else:
+                log_test("Admin Signup", False, "Missing token or incorrect role in response")
+                return False
+        else:
+            log_test("Admin Signup", False, f"Status: {response.status_code}, Response: {response.text}")
+            return False
+    except Exception as e:
+        log_test("Admin Signup", False, f"Exception: {str(e)}")
+        return False
+
+def test_admin_signup_duplicate_email():
+    """Test 5: Admin Signup - Duplicate Email Validation"""
+    try:
+        response = requests.post(
+            f"{BASE_URL}/auth/admin/signup",
+            json={
+                "email": ADMIN_EMAIL,  # Existing admin email
+                "password": "admin123",
+                "full_name": "Duplicate Admin"
+            }
+        )
+        
+        if response.status_code == 400:
+            log_test("Admin Signup - Duplicate Email", True, "Correctly rejected duplicate email with 400")
+            return True
+        else:
+            log_test("Admin Signup - Duplicate Email", False, f"Expected 400, got {response.status_code}")
+            return False
+    except Exception as e:
+        log_test("Admin Signup - Duplicate Email", False, f"Exception: {str(e)}")
+        return False
+
+def test_employee_signup():
+    """Test 6: Employee Signup (Self-Registration)"""
+    try:
+        # Generate unique email for new employee
+        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+        new_employee_email = f"test.employee.{timestamp}@peoplehub.com"
+        
+        response = requests.post(
+            f"{BASE_URL}/auth/employee/signup",
+            json={
+                "email": new_employee_email,
+                "password": "employee123",
+                "first_name": "Test",
+                "last_name": "Employee",
+                "phone": "+1-555-0199",
+                "date_of_birth": "1995-05-15",
+                "gender": "Male",
+                "address": "123 Test Street, Test City, TC 12345",
+                "department": "Engineering",
+                "position": "Software Engineer",
+                "employment_type": "Full-time",
+                "join_date": datetime.now().strftime("%Y-%m-%d"),
+                "emergency_contact_name": "Emergency Contact",
+                "emergency_contact_phone": "+1-555-0100"
+            }
+        )
+        
+        if response.status_code == 200:
+            data = response.json()
+            if "token" in data and data.get("role") == "employee":
+                log_test("Employee Signup", True, f"New employee created: {new_employee_email}")
+                return True
+            else:
+                log_test("Employee Signup", False, "Missing token or incorrect role in response")
+                return False
+        else:
+            log_test("Employee Signup", False, f"Status: {response.status_code}, Response: {response.text}")
+            return False
+    except Exception as e:
+        log_test("Employee Signup", False, f"Exception: {str(e)}")
+        return False
+
+def test_get_all_users():
+    """Test 7: GET /api/admin/users (Admin Only)"""
+    if not admin_token:
+        log_test("GET /api/admin/users", False, "No admin token available")
+        return False
+    
+    try:
+        response = requests.get(
+            f"{BASE_URL}/admin/users",
+            headers={"Authorization": f"Bearer {admin_token}"}
+        )
+        
+        if response.status_code == 200:
+            data = response.json()
+            if "total_users" in data and "total_admins" in data and "total_employees" in data:
+                log_test("GET /api/admin/users", True, 
+                        f"Total users: {data['total_users']}, Admins: {data['total_admins']}, Employees: {data['total_employees']}")
+                return True
+            else:
+                log_test("GET /api/admin/users", False, "Missing required fields in response")
+                return False
+        else:
+            log_test("GET /api/admin/users", False, f"Status: {response.status_code}, Response: {response.text}")
+            return False
+    except Exception as e:
+        log_test("GET /api/admin/users", False, f"Exception: {str(e)}")
+        return False
+
+def test_get_all_admins():
+    """Test 8: GET /api/admin/list (Admin Only)"""
+    if not admin_token:
+        log_test("GET /api/admin/list", False, "No admin token available")
+        return False
+    
+    try:
+        response = requests.get(
+            f"{BASE_URL}/admin/list",
+            headers={"Authorization": f"Bearer {admin_token}"}
+        )
+        
+        if response.status_code == 200:
+            data = response.json()
+            if isinstance(data, list):
+                log_test("GET /api/admin/list", True, f"Retrieved {len(data)} admins")
+                return True
+            else:
+                log_test("GET /api/admin/list", False, "Response is not a list")
+                return False
+        else:
+            log_test("GET /api/admin/list", False, f"Status: {response.status_code}, Response: {response.text}")
+            return False
+    except Exception as e:
+        log_test("GET /api/admin/list", False, f"Exception: {str(e)}")
+        return False
+
+def test_delete_admin():
+    """Test 9: DELETE /api/admin/{id} (Admin Only)"""
+    if not admin_token or not test_admin_id:
+        log_test("DELETE /api/admin/{id}", False, "No admin token or test admin ID available")
+        return False
+    
+    try:
+        response = requests.delete(
+            f"{BASE_URL}/admin/{test_admin_id}",
+            headers={"Authorization": f"Bearer {admin_token}"}
+        )
+        
+        if response.status_code == 200:
+            log_test("DELETE /api/admin/{id}", True, f"Successfully deleted admin: {test_admin_id}")
+            return True
+        else:
+            log_test("DELETE /api/admin/{id}", False, f"Status: {response.status_code}, Response: {response.text}")
+            return False
+    except Exception as e:
+        log_test("DELETE /api/admin/{id}", False, f"Exception: {str(e)}")
+        return False
+
+def test_delete_admin_self_prevention():
+    """Test 10: DELETE /api/admin/{id} - Self-Deletion Prevention"""
+    if not admin_token:
+        log_test("DELETE Admin - Self-Deletion Prevention", False, "No admin token available")
+        return False
+    
+    try:
+        # Get current admin's ID from token
+        response = requests.get(
+            f"{BASE_URL}/employee/profile",
+            headers={"Authorization": f"Bearer {admin_token}"}
+        )
+        
+        if response.status_code == 200:
+            current_admin_id = response.json().get("id")
+            
+            # Try to delete self
+            delete_response = requests.delete(
+                f"{BASE_URL}/admin/{current_admin_id}",
+                headers={"Authorization": f"Bearer {admin_token}"}
+            )
+            
+            if delete_response.status_code == 400:
+                log_test("DELETE Admin - Self-Deletion Prevention", True, "Correctly prevented self-deletion with 400")
+                return True
+            else:
+                log_test("DELETE Admin - Self-Deletion Prevention", False, 
+                        f"Expected 400, got {delete_response.status_code}")
+                return False
+        else:
+            log_test("DELETE Admin - Self-Deletion Prevention", False, "Could not get current admin ID")
+            return False
+    except Exception as e:
+        log_test("DELETE Admin - Self-Deletion Prevention", False, f"Exception: {str(e)}")
+        return False
+
+def test_get_recent_signups():
+    """Test 11: GET /api/admin/recent-signups (Admin Only)"""
+    if not admin_token:
+        log_test("GET /api/admin/recent-signups", False, "No admin token available")
+        return False
+    
+    try:
+        response = requests.get(
+            f"{BASE_URL}/admin/recent-signups?days=7",
+            headers={"Authorization": f"Bearer {admin_token}"}
+        )
+        
+        if response.status_code == 200:
+            data = response.json()
+            if "recent_signups" in data and "total_recent" in data:
+                log_test("GET /api/admin/recent-signups", True, 
+                        f"Total recent: {data['total_recent']}, Admins: {data['recent_admins']}, Employees: {data['recent_employees']}")
+                return True
+            else:
+                log_test("GET /api/admin/recent-signups", False, "Missing required fields in response")
+                return False
+        else:
+            log_test("GET /api/admin/recent-signups", False, f"Status: {response.status_code}, Response: {response.text}")
+            return False
+    except Exception as e:
+        log_test("GET /api/admin/recent-signups", False, f"Exception: {str(e)}")
+        return False
+
+def test_admin_endpoint_requires_auth():
+    """Test 12: Admin Endpoints Require Authentication"""
+    try:
+        response = requests.get(f"{BASE_URL}/admin/users")
+        
+        if response.status_code == 403:
+            log_test("Admin Endpoints - Auth Required", True, "Correctly rejected unauthenticated request with 403")
+            return True
+        else:
+            log_test("Admin Endpoints - Auth Required", False, f"Expected 403, got {response.status_code}")
+            return False
+    except Exception as e:
+        log_test("Admin Endpoints - Auth Required", False, f"Exception: {str(e)}")
+        return False
+
+def test_employee_cannot_access_admin_endpoints():
+    """Test 13: Employee Token Cannot Access Admin Endpoints"""
+    if not employee_token:
+        log_test("Employee Cannot Access Admin Endpoints", False, "No employee token available")
+        return False
+    
+    try:
+        response = requests.get(
+            f"{BASE_URL}/admin/users",
+            headers={"Authorization": f"Bearer {employee_token}"}
+        )
+        
+        if response.status_code == 403:
+            log_test("Employee Cannot Access Admin Endpoints", True, "Correctly rejected employee token with 403")
+            return True
+        else:
+            log_test("Employee Cannot Access Admin Endpoints", False, f"Expected 403, got {response.status_code}")
+            return False
+    except Exception as e:
+        log_test("Employee Cannot Access Admin Endpoints", False, f"Exception: {str(e)}")
+        return False
+
+# ============ PRIORITY 2: CORE HR MODULES ============
+
+def test_dashboard_stats():
+    """Test 14: GET /api/dashboard/stats"""
+    try:
+        response = requests.get(f"{BASE_URL}/dashboard/stats")
+        
+        if response.status_code == 200:
+            data = response.json()
+            if all(key in data for key in ["total_employees", "pending_leaves", "open_positions", "pending_onboarding_tasks"]):
+                log_test("GET /api/dashboard/stats", True, 
+                        f"Employees: {data['total_employees']}, Leaves: {data['pending_leaves']}, Positions: {data['open_positions']}, Tasks: {data['pending_onboarding_tasks']}")
+                return True
+            else:
+                log_test("GET /api/dashboard/stats", False, "Missing required fields in response")
+                return False
+        else:
+            log_test("GET /api/dashboard/stats", False, f"Status: {response.status_code}, Response: {response.text}")
+            return False
+    except Exception as e:
+        log_test("GET /api/dashboard/stats", False, f"Exception: {str(e)}")
+        return False
+
+def test_dashboard_trends():
+    """Test 15: GET /api/dashboard/trends"""
+    try:
+        for period in ["day", "week", "month"]:
+            response = requests.get(f"{BASE_URL}/dashboard/trends?period={period}")
+            
+            if response.status_code != 200:
+                log_test(f"GET /api/dashboard/trends?period={period}", False, 
+                        f"Status: {response.status_code}, Response: {response.text}")
+                return False
+        
+        log_test("GET /api/dashboard/trends", True, "All periods (day/week/month) working")
+        return True
+    except Exception as e:
+        log_test("GET /api/dashboard/trends", False, f"Exception: {str(e)}")
+        return False
+
+def test_get_all_employees():
+    """Test 16: GET /api/employees"""
+    try:
+        response = requests.get(f"{BASE_URL}/employees")
+        
+        if response.status_code == 200:
+            data = response.json()
+            if isinstance(data, list):
+                log_test("GET /api/employees", True, f"Retrieved {len(data)} employees")
+                return True
+            else:
+                log_test("GET /api/employees", False, "Response is not a list")
+                return False
+        else:
+            log_test("GET /api/employees", False, f"Status: {response.status_code}, Response: {response.text}")
+            return False
+    except Exception as e:
+        log_test("GET /api/employees", False, f"Exception: {str(e)}")
+        return False
+
+def test_get_employees_by_status():
+    """Test 17: GET /api/employees?status=active"""
+    try:
+        response = requests.get(f"{BASE_URL}/employees?status=active")
+        
+        if response.status_code == 200:
+            data = response.json()
+            if isinstance(data, list):
+                log_test("GET /api/employees?status=active", True, f"Retrieved {len(data)} active employees")
+                return True
+            else:
+                log_test("GET /api/employees?status=active", False, "Response is not a list")
+                return False
+        else:
+            log_test("GET /api/employees?status=active", False, f"Status: {response.status_code}, Response: {response.text}")
+            return False
+    except Exception as e:
+        log_test("GET /api/employees?status=active", False, f"Exception: {str(e)}")
+        return False
+
+def test_create_attendance():
+    """Test 18: POST /api/attendance"""
+    global test_attendance_id
+    
+    if not test_employee_id:
+        log_test("POST /api/attendance", False, "No test employee ID available")
+        return False
+    
+    try:
+        today = datetime.now().strftime("%Y-%m-%d")
+        response = requests.post(
+            f"{BASE_URL}/attendance",
+            json={
+                "employee_id": test_employee_id,
+                "date": today,
+                "check_in": "09:00:00",
+                "check_out": "18:00:00",
+                "status": "present",
+                "notes": "Test attendance record"
+            }
+        )
+        
+        if response.status_code == 200:
+            data = response.json()
+            test_attendance_id = data.get("id")
+            log_test("POST /api/attendance", True, f"Created attendance record: {test_attendance_id}")
+            return True
+        else:
+            log_test("POST /api/attendance", False, f"Status: {response.status_code}, Response: {response.text}")
+            return False
+    except Exception as e:
+        log_test("POST /api/attendance", False, f"Exception: {str(e)}")
+        return False
+
+def test_get_attendance():
+    """Test 19: GET /api/attendance"""
+    if not test_employee_id:
+        log_test("GET /api/attendance", False, "No test employee ID available")
+        return False
+    
+    try:
+        today = datetime.now().strftime("%Y-%m-%d")
+        response = requests.get(f"{BASE_URL}/attendance?employee_id={test_employee_id}&date={today}")
+        
+        if response.status_code == 200:
+            data = response.json()
+            if isinstance(data, list):
+                log_test("GET /api/attendance", True, f"Retrieved {len(data)} attendance records")
+                return True
+            else:
+                log_test("GET /api/attendance", False, "Response is not a list")
+                return False
+        else:
+            log_test("GET /api/attendance", False, f"Status: {response.status_code}, Response: {response.text}")
+            return False
+    except Exception as e:
+        log_test("GET /api/attendance", False, f"Exception: {str(e)}")
+        return False
+
+def test_update_attendance():
+    """Test 20: PUT /api/attendance/{id}"""
+    if not test_attendance_id:
+        log_test("PUT /api/attendance/{id}", False, "No test attendance ID available")
+        return False
+    
+    try:
+        today = datetime.now().strftime("%Y-%m-%d")
+        response = requests.put(
+            f"{BASE_URL}/attendance/{test_attendance_id}",
+            json={
+                "employee_id": test_employee_id,
+                "date": today,
+                "check_in": "09:00:00",
+                "check_out": "19:00:00",  # Updated check-out time
+                "status": "present",
+                "notes": "Updated attendance record"
+            }
+        )
+        
+        if response.status_code == 200:
+            log_test("PUT /api/attendance/{id}", True, "Successfully updated attendance record")
+            return True
+        else:
+            log_test("PUT /api/attendance/{id}", False, f"Status: {response.status_code}, Response: {response.text}")
+            return False
+    except Exception as e:
+        log_test("PUT /api/attendance/{id}", False, f"Exception: {str(e)}")
+        return False
+
+def test_create_leave_request():
+    """Test 21: POST /api/leave-requests"""
+    global test_leave_id
+    
+    if not test_employee_id:
+        log_test("POST /api/leave-requests", False, "No test employee ID available")
+        return False
+    
+    try:
+        start_date = (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d")
+        end_date = (datetime.now() + timedelta(days=9)).strftime("%Y-%m-%d")
+        
+        response = requests.post(
+            f"{BASE_URL}/leave-requests",
+            json={
+                "employee_id": test_employee_id,
+                "leave_type": "vacation",
+                "start_date": start_date,
+                "end_date": end_date,
+                "days_count": 3,
+                "reason": "Family vacation"
+            }
+        )
+        
+        if response.status_code == 200:
+            data = response.json()
+            test_leave_id = data.get("id")
+            log_test("POST /api/leave-requests", True, f"Created leave request: {test_leave_id}")
+            return True
+        else:
+            log_test("POST /api/leave-requests", False, f"Status: {response.status_code}, Response: {response.text}")
+            return False
+    except Exception as e:
+        log_test("POST /api/leave-requests", False, f"Exception: {str(e)}")
+        return False
+
+def test_get_leave_requests():
+    """Test 22: GET /api/leave-requests"""
+    try:
+        response = requests.get(f"{BASE_URL}/leave-requests?status=pending")
+        
+        if response.status_code == 200:
+            data = response.json()
+            if isinstance(data, list):
+                log_test("GET /api/leave-requests", True, f"Retrieved {len(data)} pending leave requests")
+                return True
+            else:
+                log_test("GET /api/leave-requests", False, "Response is not a list")
+                return False
+        else:
+            log_test("GET /api/leave-requests", False, f"Status: {response.status_code}, Response: {response.text}")
+            return False
+    except Exception as e:
+        log_test("GET /api/leave-requests", False, f"Exception: {str(e)}")
+        return False
+
+def test_approve_leave_request():
+    """Test 23: PUT /api/leave-requests/{id}/approve"""
+    if not test_leave_id:
+        log_test("PUT /api/leave-requests/{id}/approve", False, "No test leave ID available")
+        return False
+    
+    try:
+        response = requests.put(
+            f"{BASE_URL}/leave-requests/{test_leave_id}/approve",
+            json={
+                "status": "approved",
+                "approved_by": "admin@peoplehub.com"
+            }
+        )
+        
+        if response.status_code == 200:
+            log_test("PUT /api/leave-requests/{id}/approve", True, "Successfully approved leave request")
+            return True
+        else:
+            log_test("PUT /api/leave-requests/{id}/approve", False, f"Status: {response.status_code}, Response: {response.text}")
+            return False
+    except Exception as e:
+        log_test("PUT /api/leave-requests/{id}/approve", False, f"Exception: {str(e)}")
+        return False
+
+def test_create_payroll():
+    """Test 24: POST /api/payroll"""
+    global test_payroll_id
+    
+    if not test_employee_id:
+        log_test("POST /api/payroll", False, "No test employee ID available")
+        return False
+    
+    try:
+        current_month = datetime.now().strftime("%Y-%m")
+        
+        response = requests.post(
+            f"{BASE_URL}/payroll",
+            json={
+                "employee_id": test_employee_id,
+                "month": current_month,
+                "basic_salary": 60000,
+                "allowances": 10000,
+                "deductions": 5000,
+                "tax": 8000,
+                "net_salary": 57000,
+                "payment_date": datetime.now().strftime("%Y-%m-%d"),
+                "payment_status": "pending"
+            }
+        )
+        
+        if response.status_code == 200:
+            data = response.json()
+            test_payroll_id = data.get("id")
+            log_test("POST /api/payroll", True, f"Created payroll record: {test_payroll_id}")
+            return True
+        else:
+            log_test("POST /api/payroll", False, f"Status: {response.status_code}, Response: {response.text}")
+            return False
+    except Exception as e:
+        log_test("POST /api/payroll", False, f"Exception: {str(e)}")
+        return False
+
+def test_get_payroll():
+    """Test 25: GET /api/payroll"""
+    if not test_employee_id:
+        log_test("GET /api/payroll", False, "No test employee ID available")
+        return False
+    
+    try:
+        current_month = datetime.now().strftime("%Y-%m")
+        response = requests.get(f"{BASE_URL}/payroll?employee_id={test_employee_id}&month={current_month}")
+        
+        if response.status_code == 200:
+            data = response.json()
+            if isinstance(data, list):
+                log_test("GET /api/payroll", True, f"Retrieved {len(data)} payroll records")
+                return True
+            else:
+                log_test("GET /api/payroll", False, "Response is not a list")
+                return False
+        else:
+            log_test("GET /api/payroll", False, f"Status: {response.status_code}, Response: {response.text}")
+            return False
+    except Exception as e:
+        log_test("GET /api/payroll", False, f"Exception: {str(e)}")
+        return False
+
+def test_update_payroll():
+    """Test 26: PUT /api/payroll/{id}"""
+    if not test_payroll_id:
+        log_test("PUT /api/payroll/{id}", False, "No test payroll ID available")
+        return False
+    
+    try:
+        current_month = datetime.now().strftime("%Y-%m")
+        
+        response = requests.put(
+            f"{BASE_URL}/payroll/{test_payroll_id}",
+            json={
+                "employee_id": test_employee_id,
+                "month": current_month,
+                "basic_salary": 60000,
+                "allowances": 12000,  # Updated allowances
+                "deductions": 5000,
+                "tax": 8000,
+                "net_salary": 59000,  # Updated net salary
+                "payment_date": datetime.now().strftime("%Y-%m-%d"),
+                "payment_status": "paid"  # Updated status
+            }
+        )
+        
+        if response.status_code == 200:
+            log_test("PUT /api/payroll/{id}", True, "Successfully updated payroll record")
+            return True
+        else:
+            log_test("PUT /api/payroll/{id}", False, f"Status: {response.status_code}, Response: {response.text}")
+            return False
+    except Exception as e:
+        log_test("PUT /api/payroll/{id}", False, f"Exception: {str(e)}")
+        return False
+
+def test_create_job_posting():
+    """Test 27: POST /api/job-postings"""
+    global test_job_id
+    
+    try:
+        response = requests.post(
+            f"{BASE_URL}/job-postings",
+            json={
+                "title": "Senior Software Engineer",
+                "department": "Engineering",
+                "location": "San Francisco, CA",
+                "employment_type": "Full-time",
+                "salary_range": "$120,000 - $160,000",
+                "description": "We are looking for an experienced software engineer...",
+                "requirements": "5+ years of experience, Python, React, AWS",
+                "posted_by": "admin@peoplehub.com"
+            }
+        )
+        
+        if response.status_code == 200:
+            data = response.json()
+            test_job_id = data.get("id")
+            log_test("POST /api/job-postings", True, f"Created job posting: {test_job_id}")
+            return True
+        else:
+            log_test("POST /api/job-postings", False, f"Status: {response.status_code}, Response: {response.text}")
+            return False
+    except Exception as e:
+        log_test("POST /api/job-postings", False, f"Exception: {str(e)}")
+        return False
+
+def test_get_job_postings():
+    """Test 28: GET /api/job-postings"""
+    try:
+        response = requests.get(f"{BASE_URL}/job-postings?status=open")
+        
+        if response.status_code == 200:
+            data = response.json()
+            if isinstance(data, list):
+                log_test("GET /api/job-postings", True, f"Retrieved {len(data)} open job postings")
+                return True
+            else:
+                log_test("GET /api/job-postings", False, "Response is not a list")
+                return False
+        else:
+            log_test("GET /api/job-postings", False, f"Status: {response.status_code}, Response: {response.text}")
+            return False
+    except Exception as e:
+        log_test("GET /api/job-postings", False, f"Exception: {str(e)}")
+        return False
+
+def test_create_candidate():
+    """Test 29: POST /api/candidates"""
+    global test_candidate_id
+    
+    if not test_job_id:
+        log_test("POST /api/candidates", False, "No test job ID available")
+        return False
+    
+    try:
+        response = requests.post(
+            f"{BASE_URL}/candidates",
+            json={
+                "job_id": test_job_id,
+                "full_name": "Jane Smith",
+                "email": "jane.smith@example.com",
+                "phone": "+1-555-0123",
+                "experience_years": 6,
+                "current_company": "Tech Corp",
+                "expected_salary": 140000,
+                "resume_url": "https://example.com/resume.pdf"
+            }
+        )
+        
+        if response.status_code == 200:
+            data = response.json()
+            test_candidate_id = data.get("id")
+            log_test("POST /api/candidates", True, f"Created candidate: {test_candidate_id}")
+            return True
+        else:
+            log_test("POST /api/candidates", False, f"Status: {response.status_code}, Response: {response.text}")
+            return False
+    except Exception as e:
+        log_test("POST /api/candidates", False, f"Exception: {str(e)}")
+        return False
+
+def test_update_candidate():
+    """Test 30: PUT /api/candidates/{id}/stage"""
+    if not test_candidate_id:
+        log_test("PUT /api/candidates/{id}/stage", False, "No test candidate ID available")
+        return False
+    
+    try:
+        response = requests.put(
+            f"{BASE_URL}/candidates/{test_candidate_id}/stage",
+            json={
+                "stage": "interview",
+                "notes": "Scheduled for technical interview"
+            }
+        )
+        
+        if response.status_code == 200:
+            log_test("PUT /api/candidates/{id}/stage", True, "Successfully updated candidate stage")
+            return True
+        else:
+            log_test("PUT /api/candidates/{id}/stage", False, f"Status: {response.status_code}, Response: {response.text}")
+            return False
+    except Exception as e:
+        log_test("PUT /api/candidates/{id}/stage", False, f"Exception: {str(e)}")
+        return False
+
+def test_create_onboarding_task():
+    """Test 31: POST /api/onboarding-tasks"""
+    global test_onboarding_task_id
+    
+    if not test_employee_id:
+        log_test("POST /api/onboarding-tasks", False, "No test employee ID available")
+        return False
+    
+    try:
+        due_date = (datetime.now() + timedelta(days=14)).strftime("%Y-%m-%d")
+        
+        response = requests.post(
+            f"{BASE_URL}/onboarding-tasks",
+            json={
+                "employee_id": test_employee_id,
+                "task_title": "Complete IT Security Training",
+                "task_description": "Complete the mandatory IT security training module",
+                "due_date": due_date,
+                "assigned_to": "admin@peoplehub.com"
+            }
+        )
+        
+        if response.status_code == 200:
+            data = response.json()
+            test_onboarding_task_id = data.get("id")
+            log_test("POST /api/onboarding-tasks", True, f"Created onboarding task: {test_onboarding_task_id}")
+            return True
+        else:
+            log_test("POST /api/onboarding-tasks", False, f"Status: {response.status_code}, Response: {response.text}")
+            return False
+    except Exception as e:
+        log_test("POST /api/onboarding-tasks", False, f"Exception: {str(e)}")
+        return False
+
+def test_get_onboarding_tasks():
+    """Test 32: GET /api/onboarding-tasks"""
+    if not test_employee_id:
+        log_test("GET /api/onboarding-tasks", False, "No test employee ID available")
+        return False
+    
+    try:
+        response = requests.get(f"{BASE_URL}/onboarding-tasks?employee_id={test_employee_id}")
+        
+        if response.status_code == 200:
+            data = response.json()
+            if isinstance(data, list):
+                log_test("GET /api/onboarding-tasks", True, f"Retrieved {len(data)} onboarding tasks")
+                return True
+            else:
+                log_test("GET /api/onboarding-tasks", False, "Response is not a list")
+                return False
+        else:
+            log_test("GET /api/onboarding-tasks", False, f"Status: {response.status_code}, Response: {response.text}")
+            return False
+    except Exception as e:
+        log_test("GET /api/onboarding-tasks", False, f"Exception: {str(e)}")
+        return False
+
+def test_update_onboarding_task():
+    """Test 33: PUT /api/onboarding-tasks/{id}/status"""
+    if not test_onboarding_task_id:
+        log_test("PUT /api/onboarding-tasks/{id}/status", False, "No test onboarding task ID available")
+        return False
+    
+    try:
+        response = requests.put(
+            f"{BASE_URL}/onboarding-tasks/{test_onboarding_task_id}/status",
+            json={"status": "completed"}
+        )
+        
+        if response.status_code == 200:
+            log_test("PUT /api/onboarding-tasks/{id}/status", True, "Successfully updated onboarding task status")
+            return True
+        else:
+            log_test("PUT /api/onboarding-tasks/{id}/status", False, f"Status: {response.status_code}, Response: {response.text}")
+            return False
+    except Exception as e:
+        log_test("PUT /api/onboarding-tasks/{id}/status", False, f"Exception: {str(e)}")
+        return False
+
+def test_create_performance_review():
+    """Test 34: POST /api/performance-reviews"""
+    global test_performance_review_id
+    
+    if not test_employee_id:
+        log_test("POST /api/performance-reviews", False, "No test employee ID available")
+        return False
+    
+    try:
+        response = requests.post(
+            f"{BASE_URL}/performance-reviews",
+            json={
+                "employee_id": test_employee_id,
+                "reviewer_id": "admin@peoplehub.com",
+                "review_period": "Q1 2025",
+                "goals": "Complete project X, improve code quality",
+                "achievements": "Successfully delivered project X ahead of schedule",
+                "areas_of_improvement": "Communication skills, documentation",
+                "rating": 4.5,
+                "feedback": "Excellent performance overall"
+            }
+        )
+        
+        if response.status_code == 200:
+            data = response.json()
+            test_performance_review_id = data.get("id")
+            log_test("POST /api/performance-reviews", True, f"Created performance review: {test_performance_review_id}")
+            return True
+        else:
+            log_test("POST /api/performance-reviews", False, f"Status: {response.status_code}, Response: {response.text}")
+            return False
+    except Exception as e:
+        log_test("POST /api/performance-reviews", False, f"Exception: {str(e)}")
+        return False
+
+def test_get_performance_reviews():
+    """Test 35: GET /api/performance-reviews"""
+    if not test_employee_id:
+        log_test("GET /api/performance-reviews", False, "No test employee ID available")
+        return False
+    
+    try:
+        response = requests.get(f"{BASE_URL}/performance-reviews?employee_id={test_employee_id}")
+        
+        if response.status_code == 200:
+            data = response.json()
+            if isinstance(data, list):
+                log_test("GET /api/performance-reviews", True, f"Retrieved {len(data)} performance reviews")
+                return True
+            else:
+                log_test("GET /api/performance-reviews", False, "Response is not a list")
+                return False
+        else:
+            log_test("GET /api/performance-reviews", False, f"Status: {response.status_code}, Response: {response.text}")
+            return False
+    except Exception as e:
+        log_test("GET /api/performance-reviews", False, f"Exception: {str(e)}")
+        return False
+
+def test_update_performance_review():
+    """Test 36: PUT /api/performance-reviews/{id}"""
+    if not test_performance_review_id:
+        log_test("PUT /api/performance-reviews/{id}", False, "No test performance review ID available")
+        return False
+    
+    try:
+        response = requests.put(
+            f"{BASE_URL}/performance-reviews/{test_performance_review_id}",
+            json={
+                "employee_id": test_employee_id,
+                "reviewer_id": "admin@peoplehub.com",
+                "review_period": "Q1 2025",
+                "goals": "Complete project X, improve code quality",
+                "achievements": "Successfully delivered project X ahead of schedule with excellent quality",
+                "areas_of_improvement": "Communication skills",
+                "rating": 4.8,  # Updated rating
+                "feedback": "Outstanding performance"  # Updated feedback
+            }
+        )
+        
+        if response.status_code == 200:
+            log_test("PUT /api/performance-reviews/{id}", True, "Successfully updated performance review")
+            return True
+        else:
+            log_test("PUT /api/performance-reviews/{id}", False, f"Status: {response.status_code}, Response: {response.text}")
+            return False
+    except Exception as e:
+        log_test("PUT /api/performance-reviews/{id}", False, f"Exception: {str(e)}")
+        return False
+
+# ============ MAIN TEST EXECUTION ============
+
+def run_all_tests():
+    """Run all backend tests"""
+    print("="*80)
+    print("PEOPLEHUB HRMS - COMPREHENSIVE BACKEND API TESTING")
+    print("="*80)
+    print(f"Backend URL: {BASE_URL}")
+    print(f"Test Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print("="*80)
+    
+    print("\n" + "="*80)
+    print("PRIORITY 1: AUTHENTICATION & USER MANAGEMENT")
+    print("="*80)
+    
+    # Authentication tests
+    test_admin_login()
+    test_admin_login_invalid_credentials()
+    test_employee_login()
+    test_admin_signup()
+    test_admin_signup_duplicate_email()
+    test_employee_signup()
+    
+    # Admin management tests
+    test_get_all_users()
+    test_get_all_admins()
+    test_delete_admin()
+    test_delete_admin_self_prevention()
+    test_get_recent_signups()
+    test_admin_endpoint_requires_auth()
+    test_employee_cannot_access_admin_endpoints()
+    
+    print("\n" + "="*80)
+    print("PRIORITY 2: CORE HR MODULES")
+    print("="*80)
+    
+    # Dashboard tests
+    test_dashboard_stats()
+    test_dashboard_trends()
+    
+    # Employee management tests
+    test_get_all_employees()
+    test_get_employees_by_status()
+    
+    # Attendance tests
+    test_create_attendance()
+    test_get_attendance()
+    test_update_attendance()
+    
+    # Leave management tests
+    test_create_leave_request()
+    test_get_leave_requests()
+    test_approve_leave_request()
+    
+    # Payroll tests
+    test_create_payroll()
+    test_get_payroll()
+    test_update_payroll()
+    
+    # Recruitment tests
+    test_create_job_posting()
+    test_get_job_postings()
+    test_create_candidate()
+    test_update_candidate()
+    
+    # Onboarding tests
+    test_create_onboarding_task()
+    test_get_onboarding_tasks()
+    test_update_onboarding_task()
+    
+    # Performance tests
+    test_create_performance_review()
+    test_get_performance_reviews()
+    test_update_performance_review()
+    
+    # Print summary
+    print_summary()
 
 if __name__ == "__main__":
-    sys.exit(main())
+    run_all_tests()

@@ -102,9 +102,37 @@
 # Testing Data - Main Agent and testing sub agent both should log testing data below this section
 #====================================================================================================
 
-user_problem_statement: "Comprehensive HRMS application with admin and employee portals, featuring HR modules for dashboard, employees, attendance, leave management, recruitment, onboarding, payroll, and performance tracking"
+user_problem_statement: "Comprehensive HRMS application with admin and employee portals, featuring HR modules for dashboard, employees, attendance, leave management, recruitment, onboarding, payroll, and performance tracking. Admin should be able to create multiple admins and view all users (employees and admins) with proper security."
 
 backend:
+  - task: "Admin User Management APIs"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Added new admin management endpoints: GET /api/admin/users (get all users - admins and employees), GET /api/admin/list (get all admins), DELETE /api/admin/{id} (delete admin with self-deletion prevention), GET /api/admin/recent-signups (get recently signed up users with days filter). All endpoints require admin authentication via Bearer token. JWT exception handling fixed (ExpiredSignatureError, InvalidTokenError). get_current_user now checks both employees and admin_users collections."
+      - working: true
+        agent: "testing"
+        comment: "COMPREHENSIVE ADMIN USER MANAGEMENT TESTING COMPLETED ✅ - All 7 admin management tests passed (100% success rate). Test Results: (1) GET /api/admin/users - Working correctly, returns total_users: 19, total_admins: 3, total_employees: 16 with proper structure. (2) GET /api/admin/list - Working correctly, retrieved 3 admins. (3) DELETE /api/admin/{id} - Successfully deleted test admin, proper 200 response. (4) Self-Deletion Prevention - Correctly prevents admin from deleting own account with 400 error. (5) GET /api/admin/recent-signups?days=7 - Working correctly, returns recent_signups with proper counts (18 total, 2 admins, 16 employees). (6) Authentication Required - Unauthenticated requests correctly rejected with 403. (7) Employee Token Rejection - Employee tokens correctly rejected from admin endpoints with 403. All admin management endpoints fully functional with proper security."
+
+  - task: "Admin and Employee Account Seeding"
+    implemented: true
+    working: true
+    file: "/app/backend/seed_data.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "Database seeded successfully with 2 admin users and 15 employees. Admin credentials: admin@peoplehub.com / admin123 and hr.admin@peoplehub.com / admin123. All employees have password: employee123. Passwords hashed using bcrypt with passlib. Login tested and working for both admin and employee accounts."
+
+
   - task: "Dashboard Trend Analytics API"
     implemented: true
     working: true
@@ -212,6 +240,66 @@ backend:
       - working: true
         agent: "testing"
         comment: "P0 PRIORITY EMPLOYEE SIGNUP VERIFICATION COMPLETED ✅ - All authentication flows tested successfully (100% success rate). Test Results: (1) Employee Signup - Successfully created employee account with POST /api/auth/employee/signup using test data (email, password, personal details, department, position, employment info, emergency contacts). ObjectId serialization issue RESOLVED - no 500 errors. Returns proper response with token, user data, and role='employee'. (2) Employee Login - Successfully logged in with newly created credentials using POST /api/auth/login. Token authentication working correctly. (3) Admin Login - Successfully tested with admin@peoplehub.com / password (fixed password hash working). (4) Admin Signup - Successfully created new admin account with POST /api/auth/admin/signup. (5) Token-based Authentication - Successfully accessed employee profile using Bearer token from signup/login. All authentication endpoints working: employee signup, employee login, admin login, admin signup, and token-based API access. Critical P0 issue RESOLVED."
+
+  - task: "Dashboard Stats and Trends APIs"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "DASHBOARD APIs TESTING COMPLETED ✅ - All 2 dashboard tests passed (100% success rate). Test Results: (1) GET /api/dashboard/stats - Working correctly, returns total_employees: 13, pending_leaves: 31, open_positions: 5, pending_onboarding_tasks: 9. All required fields present. (2) GET /api/dashboard/trends - Working correctly for all time periods (day/week/month). Returns proper trend data with historical metrics. Dashboard APIs fully functional."
+
+  - task: "Attendance Management APIs"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "ATTENDANCE MANAGEMENT TESTING COMPLETED ✅ - All 3 attendance tests passed (100% success rate). Test Results: (1) POST /api/attendance - Successfully created attendance record with employee_id, date, check_in, check_out, status, notes. (2) GET /api/attendance - Successfully retrieved attendance records with employee_id and date filters, returned 2 records. (3) PUT /api/attendance/{id} - Successfully updated attendance record (check_out time updated from 18:00 to 19:00). All CRUD operations working correctly. Attendance management system fully functional."
+
+  - task: "Recruitment APIs"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "RECRUITMENT MANAGEMENT TESTING COMPLETED ✅ - All 4 recruitment tests passed (100% success rate). Test Results: (1) POST /api/job-postings - Successfully created job posting with title, department, location, employment_type, salary_range, description, requirements, posted_by. (2) GET /api/job-postings?status=open - Successfully retrieved 6 open job postings. (3) POST /api/candidates - Successfully created candidate with job_id, full_name, email, phone, experience_years, current_company, expected_salary, resume_url. (4) PUT /api/candidates/{id}/stage - Successfully updated candidate stage from 'applied' to 'interview' with notes. All CRUD operations working correctly. Recruitment system fully functional."
+
+  - task: "Onboarding Management APIs"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "ONBOARDING MANAGEMENT TESTING COMPLETED ✅ - All 3 onboarding tests passed (100% success rate). Test Results: (1) POST /api/onboarding-tasks - Successfully created onboarding task with employee_id, task_title, task_description, due_date, assigned_to. (2) GET /api/onboarding-tasks - Successfully retrieved 6 onboarding tasks filtered by employee_id. (3) PUT /api/onboarding-tasks/{id}/status - Successfully updated task status from 'pending' to 'completed' with completed_at timestamp. All CRUD operations working correctly. Onboarding system fully functional."
+
+  - task: "Performance Management APIs"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "PERFORMANCE MANAGEMENT TESTING COMPLETED ✅ - All 3 performance tests passed (100% success rate). Test Results: (1) POST /api/performance-reviews - Successfully created performance review with employee_id, reviewer_id, review_period, goals, achievements, areas_of_improvement, rating (4.5), feedback. (2) GET /api/performance-reviews - Successfully retrieved 3 performance reviews filtered by employee_id. (3) PUT /api/performance-reviews/{id} - Successfully updated performance review (rating updated from 4.5 to 4.8, feedback updated). All CRUD operations working correctly. Performance management system fully functional."
 
 frontend:
   - task: "Admin Portal - Dashboard"
@@ -376,6 +464,20 @@ frontend:
   - task: "Employee Self-Service Portal"
     implemented: true
     working: "NA"
+
+  - task: "User Management Page"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/src/pages/UserManagement.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Created comprehensive User Management page for admins. Features: View all users (admins + employees) with stats cards showing total counts, search by name/email, filter by user type (all/admin/employee), create new admin via dialog form, delete admin with confirmation, responsive table display with user details (name, email, type badge, status, created date, actions). Page added to sidebar navigation with Shield icon. Uses admin_token for API authentication. Needs end-to-end testing."
+
+
     file: "/app/frontend/src/pages/EmployeePortal.js"
     stuck_count: 0
     priority: "medium"
@@ -393,10 +495,12 @@ metadata:
 
 test_plan:
   current_focus:
-    - "P0 Employee Signup Verification - COMPLETED ✅"
-    - "Leave Management APIs - COMPLETED ✅"
-    - "Payroll APIs - COMPLETED ✅"
-    - "Employee Management Endpoints - COMPLETED ✅"
+    - "Admin User Management APIs - COMPLETED ✅"
+    - "Dashboard Stats and Trends APIs - COMPLETED ✅"
+    - "Attendance Management APIs - COMPLETED ✅"
+    - "Recruitment APIs - COMPLETED ✅"
+    - "Onboarding Management APIs - COMPLETED ✅"
+    - "Performance Management APIs - COMPLETED ✅"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -426,3 +530,5 @@ agent_communication:
     message: "BULK IMPORT VALIDATION FIX VERIFIED ✅ - Comprehensive re-testing completed with 100% success rate (14/14 tests passed). All 4 test scenarios working perfectly: (1) Valid bulk import successfully adds 2 complete employee records with all required fields. (2) Invalid data with missing required fields properly rejected with 400 error and detailed field-level error messages listing all missing fields. (3) Mixed valid/invalid data handled correctly with partial success - 2 valid employees added, 1 invalid rejected with error details in response. (4) GET /api/employees returns 200 OK with all 30 employees having required fields - no invalid records breaking the listing API. The validation fix is working as expected: Pydantic validates each employee before insertion, invalid records are rejected with clear error messages indicating row number and missing fields, and the API never inserts invalid data that would break other endpoints. Bug completely resolved."
   - agent: "testing"
     message: "P0 PRIORITY TESTING COMPLETED ✅ - Employee Signup Verification and Authentication flows fully tested and working (20/20 tests passed, 100% success rate). CRITICAL FINDINGS: (1) Employee Signup ObjectId Serialization Issue RESOLVED - POST /api/auth/employee/signup working correctly, no 500 errors, proper token and user data returned. (2) All Authentication Flows Working - Employee signup, employee login, admin login, admin signup, and token-based API access all functional. (3) Employee Management Endpoints Verified - GET /api/employees (25 employees), GET /api/employees/{id}, POST /api/employees/bulk all working with proper validation. (4) Leave Management APIs FULLY FUNCTIONAL - All CRUD operations tested: create leave requests, list all/filtered leaves, approve leave requests. Found 46 total leave requests, filtering by employee and status working correctly. (5) Payroll APIs FULLY FUNCTIONAL - All CRUD operations tested: create payroll records, list all/filtered payroll, update payroll records. Found 38 total payroll records, filtering by employee and month working correctly. Backend URL https://workforce-hub-498.preview.emergentagent.com/api working perfectly. All P0 and medium priority backend tasks now verified as working."
+  - agent: "testing"
+    message: "COMPREHENSIVE E2E BACKEND TESTING COMPLETED ✅ - All 36 backend API tests passed with 100% success rate. PRIORITY 1 - Authentication & User Management (13 tests): ✅ Admin login with valid/invalid credentials, ✅ Employee login, ✅ Admin signup with duplicate email validation, ✅ Employee signup (self-registration), ✅ GET /api/admin/users (19 total users: 3 admins, 16 employees), ✅ GET /api/admin/list (3 admins), ✅ DELETE /api/admin/{id} with self-deletion prevention, ✅ GET /api/admin/recent-signups (18 recent signups in 7 days), ✅ Authentication required for admin endpoints, ✅ Employee tokens rejected from admin endpoints. PRIORITY 2 - Core HR Modules (23 tests): ✅ Dashboard stats (13 employees, 31 pending leaves, 5 open positions, 9 pending tasks), ✅ Dashboard trends (day/week/month), ✅ Employee management (GET all/by status), ✅ Attendance CRUD (create/get/update), ✅ Leave management CRUD (create/get/approve - 32 pending leaves), ✅ Payroll CRUD (create/get/update - 2 payroll records), ✅ Recruitment CRUD (job postings: 6 open, candidates: create/update stage), ✅ Onboarding CRUD (tasks: create/get/update - 6 tasks), ✅ Performance CRUD (reviews: create/get/update - 3 reviews). All backend APIs fully functional with proper validation, authentication, and authorization. No critical issues found. Backend URL: https://workforce-hub-498.preview.emergentagent.com/api"

@@ -1,17 +1,37 @@
-# Test Credentials for PeopleHub
+# Test Credentials for PeopleHub HRMS
 
-## Admin Account
-- Email: admin@peoplehub.com
-- Password: password
+## 🔐 Admin Accounts
 
-## Test Employee Account
-- Email: charlotte.jones@company.com
-- Password: password123
+### Primary Admin
+- **Email:** admin@peoplehub.com
+- **Password:** admin123
+- **Name:** Super Admin
+- **Role:** admin
 
-## Demo Admin (from previous testing)
-- Email: admin@workmate.com
-- Password: admin123
+### Secondary Admin (HR)
+- **Email:** hr.admin@peoplehub.com
+- **Password:** admin123
+- **Name:** HR Administrator
+- **Role:** admin
 
-## Newly Created Test Employee (from testing)
-- Email: test.employee@company.com
-- Password: password123
+## 👥 Employee Accounts (Sample)
+
+All employees have the default password: **employee123**
+
+### Sample Employee Logins:
+1. **Email:** harper.thomas@peoplehub.com | **Password:** employee123
+2. **Email:** olivia.wilson@peoplehub.com | **Password:** employee123
+3. **Email:** ethan.gonzalez@peoplehub.com | **Password:** employee123
+4. **Email:** benjamin.thomas@peoplehub.com | **Password:** employee123
+5. **Email:** harper.hernandez@peoplehub.com | **Password:** employee123
+
+*Note: Total 15 employees are seeded in the database. All use password: employee123*
+
+## 📝 Notes
+- Admins can create new admin accounts via Admin Signup page
+- Employees can self-register via Employee Signup page
+- All passwords are securely hashed using bcrypt
+- Database is seeded with realistic HR data for testing
+
+## 🔄 Last Updated
+June 3, 2026

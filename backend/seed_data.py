@@ -5,8 +5,13 @@ from datetime import datetime, timedelta, timezone
 import random
 import os
 from dotenv import load_dotenv
+from passlib.context import CryptContext
+import uuid
 
 load_dotenv()
+
+# Password hashing context
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # MongoDB connection
 mongo_url = os.environ['MONGO_URL']
@@ -85,6 +90,36 @@ REVIEW_COMMENTS = {
     ]
 }
 
+async def generate_admin_users(db):
+    """Generate default admin users"""
+    print("👤 Creating admin users...")
+    
+    # Clear existing admins first
+    await db.admin_users.delete_many({})
+    
+    admins = [
+        {
+            "id": str(uuid.uuid4()),
+            "email": "admin@peoplehub.com",
+            "hashed_password": pwd_context.hash("admin123"),
+            "full_name": "Super Admin",
+            "role": "admin",
+            "created_at": datetime.now(timezone.utc).isoformat()
+        },
+        {
+            "id": str(uuid.uuid4()),
+            "email": "hr.admin@peoplehub.com",
+            "hashed_password": pwd_context.hash("admin123"),
+            "full_name": "HR Administrator",
+            "role": "admin",
+            "created_at": datetime.now(timezone.utc).isoformat()
+        }
+    ]
+    
+    await db.admin_users.insert_many(admins)
+    print(f"   ✅ Created {len(admins)} admin users")
+    return [admin["id"] for admin in admins]
+
 async def generate_employees(db, count=15):
     """Generate mock employees"""
     employees = []
@@ -110,6 +145,7 @@ async def generate_employees(db, count=15):
             "first_name": first_name,
             "last_name": last_name,
             "email": f"{first_name.lower()}.{last_name.lower()}@peoplehub.com",
+            "hashed_password": pwd_context.hash("employee123"),  # Default password for all employees
             "phone": f"+1-{random.randint(200, 999)}-{random.randint(200, 999)}-{random.randint(1000, 9999)}",
             "date_of_birth": dob.strftime("%Y-%m-%d"),
             "gender": random.choice(["Male", "Female", "Other"]),
@@ -377,6 +413,9 @@ async def seed_database():
         await db.payroll_records.delete_many({})
         await db.performance_reviews.delete_many({})
         
+        # Generate admin users first
+        admin_ids = await generate_admin_users(db)
+        
         # Generate all data
         employee_ids = await generate_employees(db, count=15)
         await generate_attendance(db, employee_ids)
@@ -389,6 +428,7 @@ async def seed_database():
         
         print("\n✅ Database seeding completed successfully!")
         print(f"📊 Summary:")
+        print(f"   - {len(admin_ids)} admin users")
         print(f"   - {len(employee_ids)} employees")
         print(f"   - ~{len(employee_ids) * 25} attendance records")
         print(f"   - ~{len(employee_ids) * 3} leave requests")

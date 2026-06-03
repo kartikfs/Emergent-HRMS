@@ -16,6 +16,7 @@ import Performance from "@/pages/Performance";
 import OrgStructure from "@/pages/OrgStructure";
 import PayrollEnhanced from "@/pages/PayrollEnhanced";
 import OnboardingEnhanced from "@/pages/OnboardingEnhanced";
+import UserManagement from "@/pages/UserManagement";
 import EmployeeLogin from "@/pages/EmployeeLogin";
 import AdminLogin from "@/pages/AdminLogin";
 import AdminSignup from "@/pages/AdminSignup";
@@ -38,7 +39,8 @@ import {
   DollarSign, 
   TrendingUp,
   Menu,
-  X
+  X,
+  Shield
 } from "lucide-react";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
@@ -49,6 +51,7 @@ const Sidebar = ({ isOpen, setIsOpen }) => {
   
   const menuItems = [
     { path: "/", icon: LayoutDashboard, label: "Dashboard" },
+    { path: "/user-management", icon: Shield, label: "User Management" },
     { path: "/employees", icon: Users, label: "Employees" },
     { path: "/org-structure", icon: Briefcase, label: "Org Structure" },
     { path: "/attendance", icon: Clock, label: "Attendance" },
@@ -238,6 +241,7 @@ function App() {
 
           {/* HR Portal Routes (Protected) */}
           <Route path="/" element={<ProtectedAdminRoute><Layout><Dashboard /></Layout></ProtectedAdminRoute>} />
+          <Route path="/user-management" element={<ProtectedAdminRoute><Layout><UserManagement /></Layout></ProtectedAdminRoute>} />
           <Route path="/employees" element={<ProtectedAdminRoute><Layout><Employees /></Layout></ProtectedAdminRoute>} />
           <Route path="/employees/:id" element={<ProtectedAdminRoute><Layout><EmployeeDetail /></Layout></ProtectedAdminRoute>} />
           <Route path="/org-structure" element={<ProtectedAdminRoute><Layout><OrgStructure /></Layout></ProtectedAdminRoute>} />
