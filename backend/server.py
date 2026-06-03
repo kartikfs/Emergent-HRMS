@@ -714,12 +714,16 @@ async def bulk_create_employees(data: dict):
 @api_router.patch("/employees/{employee_id}/reset-password")
 async def reset_employee_password(
     employee_id: str,
-    new_password: str,
+    request: dict,
     current_user: dict = Depends(get_current_user)
 ):
     """Reset employee password (admin only)"""
     if current_user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
+    
+    new_password = request.get("new_password")
+    if not new_password:
+        raise HTTPException(status_code=400, detail="new_password is required")
     
     employee = await db.employees.find_one({"id": employee_id}, {"_id": 0})
     if not employee:

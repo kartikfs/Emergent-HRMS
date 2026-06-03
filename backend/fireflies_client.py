@@ -42,9 +42,9 @@ class FirefliesClient:
                     }
                     analytics {
                         sentiments {
-                            positive
-                            negative
-                            neutral
+                            positive_pct
+                            negative_pct
+                            neutral_pct
                         }
                         speakers {
                             name
@@ -96,9 +96,9 @@ class FirefliesClient:
                     }
                     analytics {
                         sentiments {
-                            positive
-                            negative
-                            neutral
+                            positive_pct
+                            negative_pct
+                            neutral_pct
                         }
                         speakers {
                             name

@@ -102,9 +102,9 @@ class MeetingsService:
         if analytics and analytics.get("sentiments"):
             sent = analytics["sentiments"]
             sentiment = MeetingSentiment(
-                positive=sent.get("positive", 0),
-                negative=sent.get("negative", 0),
-                neutral=sent.get("neutral", 0)
+                positive=sent.get("positive_pct", 0),
+                negative=sent.get("negative_pct", 0),
+                neutral=sent.get("neutral_pct", 0)
             )
         
         return Meeting(
