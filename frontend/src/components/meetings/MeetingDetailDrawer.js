@@ -12,6 +12,7 @@ import {
   Sparkles,
   Send,
   Trash2,
+  Link as LinkIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -179,6 +180,17 @@ export default function MeetingDetailDrawer({ meeting, open, onClose }) {
     }
   };
 
+  const copyShareLink = async () => {
+    const url = `${window.location.origin}/meetings/${meeting.id}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success("Share link copied to clipboard");
+    } catch {
+      // Fallback: select-and-prompt
+      window.prompt("Copy this link:", url);
+    }
+  };
+
   if (!open || !meeting) return null;
 
   const formatDate = (dateString) => {
@@ -210,9 +222,21 @@ export default function MeetingDetailDrawer({ meeting, open, onClose }) {
               )}
             </div>
           </div>
-          <Button variant="ghost" size="sm" onClick={onClose} data-testid="drawer-close-btn">
-            <X className="w-5 h-5" />
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={copyShareLink}
+              data-testid="copy-link-btn"
+              title="Copy shareable link"
+            >
+              <LinkIcon className="w-4 h-4 mr-1.5" />
+              <span className="text-xs">Copy link</span>
+            </Button>
+            <Button variant="ghost" size="sm" onClick={onClose} data-testid="drawer-close-btn">
+              <X className="w-5 h-5" />
+            </Button>
+          </div>
         </div>
 
         {/* Content */}

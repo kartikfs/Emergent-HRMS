@@ -248,6 +248,7 @@ function App() {
           <Route path="/" element={<ProtectedAdminRoute><Layout><Dashboard /></Layout></ProtectedAdminRoute>} />
           <Route path="/user-management" element={<ProtectedAdminRoute><Layout><UserManagement /></Layout></ProtectedAdminRoute>} />
           <Route path="/meetings" element={<ProtectedAdminRoute><Layout><MeetingsHub /></Layout></ProtectedAdminRoute>} />
+          <Route path="/meetings/:meetingId" element={<ProtectedAdminRoute><Layout><MeetingsHub /></Layout></ProtectedAdminRoute>} />
           <Route path="/employees" element={<ProtectedAdminRoute><Layout><Employees /></Layout></ProtectedAdminRoute>} />
           <Route path="/employees/:id" element={<ProtectedAdminRoute><Layout><EmployeeDetail /></Layout></ProtectedAdminRoute>} />
           <Route path="/org-structure" element={<ProtectedAdminRoute><Layout><OrgStructure /></Layout></ProtectedAdminRoute>} />

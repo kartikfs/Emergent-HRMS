@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import { Calendar, Video, Users, Clock, TrendingUp, Filter, Search, RefreshCw, Download } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -16,6 +17,8 @@ const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
 
 export default function MeetingsHub() {
+  const navigate = useNavigate();
+  const { meetingId: routeMeetingId } = useParams();
   const [activeTab, setActiveTab] = useState("all");
   const [meetings, setMeetings] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -54,6 +57,39 @@ export default function MeetingsHub() {
     // Global stats are independent of the active tab
     fetchGlobalStats();
   }, []);
+
+  // Deep-link: if /meetings/:meetingId is in the URL, fetch that meeting and
+  // open the drawer for it.
+  useEffect(() => {
+    if (!routeMeetingId) return;
+    if (selectedMeeting && selectedMeeting.id === routeMeetingId) return;
+    const token = localStorage.getItem("admin_token") || localStorage.getItem("token");
+    axios
+      .get(`${API}/meetings/${routeMeetingId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      .then((res) => setSelectedMeeting(res.data))
+      .catch((err) => {
+        if (err?.response?.status === 404) {
+          toast.error("Meeting not found");
+        } else if (err?.response?.status === 403) {
+          toast.error("You don't have access to this meeting");
+        } else {
+          toast.error("Failed to load meeting");
+        }
+        navigate("/meetings", { replace: true });
+      });
+  }, [routeMeetingId]); // eslint-disable-line
+
+  const openMeeting = (m) => {
+    setSelectedMeeting(m);
+    navigate(`/meetings/${m.id}`, { replace: false });
+  };
+
+  const closeMeeting = () => {
+    setSelectedMeeting(null);
+    if (routeMeetingId) navigate("/meetings", { replace: false });
+  };
 
   const fetchSyncStatus = async () => {
     try {
@@ -353,7 +389,7 @@ export default function MeetingsHub() {
           <MeetingsList 
             meetings={meetings} 
             loading={loading} 
-            onSelectMeeting={setSelectedMeeting}
+            onSelectMeeting={openMeeting}
           />
         </TabsContent>
 
@@ -361,7 +397,7 @@ export default function MeetingsHub() {
           <MeetingsList 
             meetings={meetings} 
             loading={loading} 
-            onSelectMeeting={setSelectedMeeting}
+            onSelectMeeting={openMeeting}
           />
         </TabsContent>
 
@@ -369,7 +405,7 @@ export default function MeetingsHub() {
           <MeetingsList 
             meetings={meetings} 
             loading={loading} 
-            onSelectMeeting={setSelectedMeeting}
+            onSelectMeeting={openMeeting}
           />
         </TabsContent>
 
@@ -380,7 +416,7 @@ export default function MeetingsHub() {
               <p className="text-gray-500">Loading timeline...</p>
             </div>
           ) : (
-            <MeetingsTimeline meetings={meetings} onSelectMeeting={setSelectedMeeting} />
+            <MeetingsTimeline meetings={meetings} onSelectMeeting={openMeeting} />
           )}
         </TabsContent>
       </Tabs>
@@ -390,7 +426,7 @@ export default function MeetingsHub() {
         <MeetingDetailDrawer
           meeting={selectedMeeting}
           open={!!selectedMeeting}
-          onClose={() => setSelectedMeeting(null)}
+          onClose={closeMeeting}
         />
       )}
     </div>

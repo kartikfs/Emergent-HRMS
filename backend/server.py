@@ -1896,6 +1896,28 @@ async def search_meetings(
 
 
 # ============ MEETING AI CHAT ============
+@api_router.get("/meetings/{meeting_id}")
+async def get_single_meeting(
+    meeting_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """Get a single meeting by id (for shareable links)."""
+    meeting = await db.meetings_cache.find_one({"id": meeting_id}, {"_id": 0, "raw_data": 0})
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+
+    # Access control: non-admins must be participants
+    if current_user.get("role") != "admin":
+        user_email = (current_user.get("email") or "").lower()
+        participant_emails = [
+            (p.get("email") or "").lower() for p in meeting.get("participants", [])
+        ]
+        if user_email not in participant_emails:
+            raise HTTPException(status_code=403, detail="Access denied")
+
+    return meeting
+
+
 class MeetingChatRequest(BaseModel):
     message: str
     session_id: Optional[str] = None
