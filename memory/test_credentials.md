@@ -14,24 +14,26 @@
 - **Name:** HR Administrator
 - **Role:** admin
 
-## 👥 Employee Accounts (Sample)
+## 👥 Employee Accounts
 
-All employees have the default password: **employee123**
+### Featured Demo Employee
+- **Email:** harper.martin@peoplehub.com
+- **Password:** employee123
+- **Name:** Harper Martin
+- **Department:** Marketing
+- **Position:** Marketing Manager
 
-### Sample Employee Logins:
-1. **Email:** harper.thomas@peoplehub.com | **Password:** employee123
-2. **Email:** olivia.wilson@peoplehub.com | **Password:** employee123
-3. **Email:** ethan.gonzalez@peoplehub.com | **Password:** employee123
-4. **Email:** benjamin.thomas@peoplehub.com | **Password:** employee123
-5. **Email:** harper.hernandez@peoplehub.com | **Password:** employee123
-
-*Note: Total 15 employees are seeded in the database. All use password: employee123*
+### Other Sample Employees (All use password: employee123)
+1. **Email:** harper.thomas@peoplehub.com
+2. **Email:** olivia.wilson@peoplehub.com
+3. **Email:** ethan.gonzalez@peoplehub.com
+4. **Email:** benjamin.thomas@peoplehub.com
 
 ## 📝 Notes
 - Admins can create new admin accounts via Admin Signup page
 - Employees can self-register via Employee Signup page
 - All passwords are securely hashed using bcrypt
-- Database is seeded with realistic HR data for testing
+- Database contains 16+ employees total
 
 ## 🔄 Last Updated
 June 3, 2026

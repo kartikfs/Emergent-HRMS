@@ -17,6 +17,8 @@ import OrgStructure from "@/pages/OrgStructure";
 import PayrollEnhanced from "@/pages/PayrollEnhanced";
 import OnboardingEnhanced from "@/pages/OnboardingEnhanced";
 import UserManagement from "@/pages/UserManagement";
+import MeetingsHub from "@/pages/MeetingsHub";
+import EmployeeMeetings from "@/pages/EmployeeMeetings";
 import EmployeeLogin from "@/pages/EmployeeLogin";
 import AdminLogin from "@/pages/AdminLogin";
 import AdminSignup from "@/pages/AdminSignup";
@@ -40,7 +42,8 @@ import {
   TrendingUp,
   Menu,
   X,
-  Shield
+  Shield,
+  Video
 } from "lucide-react";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
@@ -52,6 +55,7 @@ const Sidebar = ({ isOpen, setIsOpen }) => {
   const menuItems = [
     { path: "/", icon: LayoutDashboard, label: "Dashboard" },
     { path: "/user-management", icon: Shield, label: "User Management" },
+    { path: "/meetings", icon: Video, label: "Meetings Hub" },
     { path: "/employees", icon: Users, label: "Employees" },
     { path: "/org-structure", icon: Briefcase, label: "Org Structure" },
     { path: "/attendance", icon: Clock, label: "Attendance" },
@@ -233,6 +237,7 @@ function App() {
             <Route index element={<Navigate to="/employee/dashboard" replace />} />
             <Route path="dashboard" element={<EmployeeDashboard />} />
             <Route path="profile" element={<EmployeeProfile />} />
+            <Route path="meetings" element={<EmployeeMeetings />} />
             <Route path="attendance" element={<EmployeeAttendance />} />
             <Route path="leaves" element={<EmployeeLeaves />} />
             <Route path="payslips" element={<EmployeePayslips />} />
@@ -242,6 +247,7 @@ function App() {
           {/* HR Portal Routes (Protected) */}
           <Route path="/" element={<ProtectedAdminRoute><Layout><Dashboard /></Layout></ProtectedAdminRoute>} />
           <Route path="/user-management" element={<ProtectedAdminRoute><Layout><UserManagement /></Layout></ProtectedAdminRoute>} />
+          <Route path="/meetings" element={<ProtectedAdminRoute><Layout><MeetingsHub /></Layout></ProtectedAdminRoute>} />
           <Route path="/employees" element={<ProtectedAdminRoute><Layout><Employees /></Layout></ProtectedAdminRoute>} />
           <Route path="/employees/:id" element={<ProtectedAdminRoute><Layout><EmployeeDetail /></Layout></ProtectedAdminRoute>} />
           <Route path="/org-structure" element={<ProtectedAdminRoute><Layout><OrgStructure /></Layout></ProtectedAdminRoute>} />

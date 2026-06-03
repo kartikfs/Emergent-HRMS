@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { Outlet, useNavigate, Link, useLocation } from "react-router-dom";
-import { Users, LayoutDashboard, Calendar, Clock, FileText, Upload, User, LogOut, Menu, X } from "lucide-react";
+import { Users, LayoutDashboard, Calendar, Clock, FileText, Upload, User, LogOut, Menu, X, Video } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { useState } from "react";
@@ -33,6 +33,7 @@ const EmployeePortal = () => {
   const menuItems = [
     { path: "/employee/dashboard", icon: LayoutDashboard, label: "Dashboard" },
     { path: "/employee/profile", icon: User, label: "My Profile" },
+    { path: "/employee/meetings", icon: Video, label: "My Meetings" },
     { path: "/employee/attendance", icon: Clock, label: "Attendance" },
     { path: "/employee/leaves", icon: Calendar, label: "Leave Requests" },
     { path: "/employee/payslips", icon: FileText, label: "Payslips" },
