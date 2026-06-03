@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, UploadFile, File, Depends
+from fastapi import FastAPI, APIRouter, HTTPException, UploadFile, File, Depends, Query, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
@@ -20,6 +20,10 @@ import sys
 sys.path.append('/app/backend')
 from models_enhanced import *
 
+# Import meetings modules
+from meetings_service import MeetingsService
+from meetings_models import MeetingFilters
+
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
@@ -27,6 +31,9 @@ load_dotenv(ROOT_DIR / '.env')
 mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
+
+# Initialize Meetings Service
+meetings_service = MeetingsService(db)
 
 # Security
 SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "your-secret-key-change-in-production")
@@ -1437,16 +1444,424 @@ async def get_dashboard_trends(
             last_value = trends[key][-1]["value"]
             if first_value > 0:
                 change = ((last_value - first_value) / first_value) * 100
-            else:
-                change = 0
-            changes[key] = round(change, 1)
+
+# ============ MEETINGS & RECORDINGS HUB ROUTES ============
+
+@api_router.get("/meetings/sync-status")
+async def get_meetings_sync_status(current_user: dict = Depends(get_current_user)):
+    """Get current sync status"""
+    status = await db.meetings_sync_status.find_one({"_id": "main"}, {"_id": 0})
+    if not status:
+        return {
+            "last_sync_attio": None,
+            "last_sync_fireflies": None,
+            "total_meetings": 0,
+            "attio_count": 0,
+            "fireflies_count": 0,
+            "deduplicated_count": 0,
+            "is_syncing": False
+        }
+    return status
+
+@api_router.post("/meetings/sync")
+async def trigger_meetings_sync(
+    background_tasks: BackgroundTasks,
+    lookback_days: int = Query(90, description="Number of days to sync"),
+    current_user: dict = Depends(get_current_user)
+):
+    """Trigger manual sync of meetings (admin only)"""
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    # Check if already syncing
+    status = await db.meetings_sync_status.find_one({"_id": "main"})
+    if status and status.get("is_syncing"):
+        raise HTTPException(status_code=400, detail="Sync already in progress")
+    
+    # Run sync in background
+    background_tasks.add_task(meetings_service.sync_meetings, lookback_days)
+    
+    return {"message": "Sync started in background", "lookback_days": lookback_days}
+
+@api_router.get("/meetings")
+async def get_meetings(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    participant_email: Optional[str] = None,
+    participant_name: Optional[str] = None,
+    keyword: Optional[str] = None,
+    source: Optional[str] = None,
+    has_recording: Optional[bool] = None,
+    has_action_items: Optional[bool] = None,
+    has_video: Optional[bool] = None,
+    sentiment: Optional[str] = None,
+    host_email: Optional[str] = None,
+    sort_by: str = "start_time",
+    sort_order: str = "desc",
+    limit: int = 50,
+    offset: int = 0,
+    current_user: dict = Depends(get_current_user)
+):
+    """Get all meetings with filters"""
+    query = {}
+    
+    # Build query
+    if start_date:
+        query["start_time"] = {"$gte": start_date}
+    if end_date:
+        if "start_time" in query:
+            query["start_time"]["$lte"] = end_date
         else:
-            changes[key] = 0
+            query["start_time"] = {"$lte": end_date}
+    
+    if source and source != "all":
+        if source == "both":
+            query["source"] = "both"
+        else:
+            query["$or"] = [
+                {"source": source},
+                {"source": "both"}
+            ]
+    
+    if participant_email:
+        query["participants.email"] = {"$regex": participant_email, "$options": "i"}
+    
+    if participant_name:
+        query["participants.name"] = {"$regex": participant_name, "$options": "i"}
+    
+    if keyword:
+        query["$or"] = [
+            {"title": {"$regex": keyword, "$options": "i"}},
+            {"summary": {"$regex": keyword, "$options": "i"}},
+            {"topics": {"$regex": keyword, "$options": "i"}}
+        ]
+    
+    if has_recording is not None:
+        query["has_recording"] = has_recording
+    
+    if has_action_items:
+        query["action_items_count"] = {"$gt": 0}
+    
+    if has_video is not None:
+        query["has_video"] = has_video
+    
+    if host_email:
+        query["host_email"] = {"$regex": host_email, "$options": "i"}
+    
+    if sentiment:
+        if sentiment == "positive":
+            query["sentiment.positive"] = {"$gt": 50}
+        elif sentiment == "negative":
+            query["sentiment.negative"] = {"$gt": 30}
+        elif sentiment == "neutral":
+            query["sentiment.neutral"] = {"$gt": 50}
+    
+    # If not admin, filter by participation
+    if current_user.get("role") != "admin":
+        user_email = current_user.get("email")
+        query["participants.email"] = user_email
+    
+    # Count total
+    total = await db.meetings_cache.count_documents(query)
+    
+    # Sort
+    sort_direction = -1 if sort_order == "desc" else 1
+    
+    # Get meetings
+    meetings = await db.meetings_cache.find(query, {"_id": 0}) \
+        .sort(sort_by, sort_direction) \
+        .skip(offset) \
+        .limit(limit) \
+        .to_list(limit)
     
     return {
-        "trends": trends,
-        "changes": changes,
-        "period": period
+        "meetings": meetings,
+        "total": total,
+        "limit": limit,
+        "offset": offset
+    }
+
+@api_router.get("/meetings/attio")
+async def get_attio_meetings(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    linked_company: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0,
+    current_user: dict = Depends(get_current_user)
+):
+    """Get Attio-only meetings"""
+    query = {
+        "$or": [
+            {"source": "attio"},
+            {"source": "both", "attio_id": {"$exists": True}}
+        ]
+    }
+    
+    if start_date:
+        query["start_time"] = {"$gte": start_date}
+    if end_date:
+        if "start_time" in query:
+            query["start_time"]["$lte"] = end_date
+        else:
+            query["start_time"] = {"$lte": end_date}
+    
+    if linked_company:
+        query["linked_companies"] = linked_company
+    
+    # If not admin, filter by participation
+    if current_user.get("role") != "admin":
+        query["participants.email"] = current_user.get("email")
+    
+    total = await db.meetings_cache.count_documents(query)
+    meetings = await db.meetings_cache.find(query, {"_id": 0}) \
+        .sort("start_time", -1) \
+        .skip(offset) \
+        .limit(limit) \
+        .to_list(limit)
+    
+    return {
+        "meetings": meetings,
+        "total": total,
+        "limit": limit,
+        "offset": offset
+    }
+
+@api_router.get("/meetings/fireflies")
+async def get_fireflies_meetings(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    host_email: Optional[str] = None,
+    sentiment: Optional[str] = None,
+    has_video: Optional[bool] = None,
+    limit: int = 50,
+    offset: int = 0,
+    current_user: dict = Depends(get_current_user)
+):
+    """Get Fireflies-only meetings"""
+    query = {
+        "$or": [
+            {"source": "fireflies"},
+            {"source": "both", "fireflies_id": {"$exists": True}}
+        ]
+    }
+    
+    if start_date:
+        query["start_time"] = {"$gte": start_date}
+    if end_date:
+        if "start_time" in query:
+            query["start_time"]["$lte"] = end_date
+        else:
+            query["start_time"] = {"$lte": end_date}
+    
+    if host_email:
+        query["host_email"] = {"$regex": host_email, "$options": "i"}
+    
+    if sentiment:
+        if sentiment == "positive":
+            query["sentiment.positive"] = {"$gt": 50}
+        elif sentiment == "negative":
+            query["sentiment.negative"] = {"$gt": 30}
+    
+    if has_video is not None:
+        query["has_video"] = has_video
+    
+    # If not admin, filter by participation
+    if current_user.get("role") != "admin":
+        query["participants.email"] = current_user.get("email")
+    
+    total = await db.meetings_cache.count_documents(query)
+    meetings = await db.meetings_cache.find(query, {"_id": 0}) \
+        .sort("start_time", -1) \
+        .skip(offset) \
+        .limit(limit) \
+        .to_list(limit)
+    
+    return {
+        "meetings": meetings,
+        "total": total,
+        "limit": limit,
+        "offset": offset
+    }
+
+@api_router.get("/meetings/{meeting_id}/transcript")
+async def get_meeting_transcript(
+    meeting_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """Get full transcript for a meeting (fetched on-demand)"""
+    # Check if user has access to this meeting
+    meeting = await db.meetings_cache.find_one({"id": meeting_id}, {"_id": 0})
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    
+    # Check access
+    if current_user.get("role") != "admin":
+        user_email = current_user.get("email")
+        participant_emails = [p.get("email") for p in meeting.get("participants", [])]
+        if user_email not in participant_emails:
+            raise HTTPException(status_code=403, detail="Access denied")
+    
+    # Fetch transcript
+    transcript = await meetings_service.get_transcript(meeting_id)
+    if not transcript:
+        raise HTTPException(status_code=404, detail="Transcript not available")
+    
+    return transcript.model_dump()
+
+@api_router.get("/meetings/action-items")
+async def get_action_items(
+    status: Optional[str] = None,
+    assigned_to: Optional[str] = None,
+    limit: int = 100,
+    offset: int = 0,
+    current_user: dict = Depends(get_current_user)
+):
+    """Get all action items from meetings"""
+    query = {}
+    
+    if status:
+        query["status"] = status
+    
+    if assigned_to:
+        query["assigned_to"] = assigned_to
+    
+    # If not admin, filter by assigned_to
+    if current_user.get("role") != "admin":
+        query["assigned_to"] = current_user.get("email")
+    
+    total = await db.meeting_action_items.count_documents(query)
+    items = await db.meeting_action_items.find(query, {"_id": 0}) \
+        .sort("created_at", -1) \
+        .skip(offset) \
+        .limit(limit) \
+        .to_list(limit)
+    
+    return {
+        "action_items": items,
+        "total": total,
+        "limit": limit,
+        "offset": offset
+    }
+
+@api_router.patch("/meetings/action-items/{item_id}")
+async def update_action_item_status(
+    item_id: str,
+    status: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """Update action item status"""
+    # Check if item exists
+    item = await db.meeting_action_items.find_one({"id": item_id}, {"_id": 0})
+    if not item:
+        raise HTTPException(status_code=404, detail="Action item not found")
+    
+    # Check access
+    if current_user.get("role") != "admin":
+        if item.get("assigned_to") != current_user.get("email"):
+            raise HTTPException(status_code=403, detail="Access denied")
+    
+    # Update
+    await db.meeting_action_items.update_one(
+        {"id": item_id},
+        {"$set": {"status": status}}
+    )
+    
+    updated_item = await db.meeting_action_items.find_one({"id": item_id}, {"_id": 0})
+    return updated_item
+
+@api_router.get("/employees/{employee_id}/meetings")
+async def get_employee_meetings(
+    employee_id: str,
+    limit: int = 50,
+    offset: int = 0,
+    current_user: dict = Depends(get_current_user)
+):
+    """Get all meetings for a specific employee"""
+    # Get employee
+    employee = await db.employees.find_one({"id": employee_id}, {"_id": 0})
+    if not employee:
+        raise HTTPException(status_code=404, detail="Employee not found")
+    
+    # Check access
+    if current_user.get("role") != "admin" and current_user.get("id") != employee_id:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    employee_email = employee.get("email")
+    
+    # Get meetings
+    query = {"participants.email": employee_email}
+    total = await db.meetings_cache.count_documents(query)
+    meetings = await db.meetings_cache.find(query, {"_id": 0}) \
+        .sort("start_time", -1) \
+        .skip(offset) \
+        .limit(limit) \
+        .to_list(limit)
+    
+    # Calculate stats
+    total_meetings = len(meetings)
+    total_duration = sum(m.get("duration_minutes", 0) for m in meetings)
+    
+    # Top meeting partners
+    partner_counts = {}
+    for meeting in meetings:
+        for p in meeting.get("participants", []):
+            if p.get("email") != employee_email:
+                partner_email = p.get("email")
+                partner_name = p.get("name", partner_email)
+                if partner_email:
+                    partner_counts[partner_email] = partner_counts.get(partner_email, 0) + 1
+    
+    top_partners = sorted(partner_counts.items(), key=lambda x: x[1], reverse=True)[:5]
+    
+    return {
+        "meetings": meetings,
+        "total": total,
+        "stats": {
+            "total_meetings": total_meetings,
+            "total_duration_minutes": total_duration,
+            "avg_duration_minutes": total_duration // total_meetings if total_meetings > 0 else 0,
+            "top_meeting_partners": [{"email": email, "count": count} for email, count in top_partners]
+        }
+    }
+
+@api_router.get("/meetings/search")
+async def search_meetings(
+    q: str,
+    semantic: bool = False,
+    limit: int = 20,
+    current_user: dict = Depends(get_current_user)
+):
+    """Global search across meetings"""
+    if semantic:
+        # Semantic search (requires integration with embedding service)
+        # For now, fallback to keyword search
+        pass
+    
+    # Keyword search
+    query = {
+        "$or": [
+            {"title": {"$regex": q, "$options": "i"}},
+            {"summary": {"$regex": q, "$options": "i"}},
+            {"participants.name": {"$regex": q, "$options": "i"}},
+            {"participants.email": {"$regex": q, "$options": "i"}},
+            {"topics": {"$regex": q, "$options": "i"}}
+        ]
+    }
+    
+    # If not admin, filter by participation
+    if current_user.get("role") != "admin":
+        query["participants.email"] = current_user.get("email")
+    
+    meetings = await db.meetings_cache.find(query, {"_id": 0}) \
+        .sort("start_time", -1) \
+        .limit(limit) \
+        .to_list(limit)
+    
+    return {
+        "results": meetings,
+        "query": q,
+        "count": len(meetings)
     }
 
 
