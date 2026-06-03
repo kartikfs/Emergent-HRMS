@@ -50,6 +50,11 @@ export default function MeetingsHub() {
     fetchMeetings();
   }, [activeTab, filters]);
 
+  useEffect(() => {
+    // Global stats are independent of the active tab
+    fetchGlobalStats();
+  }, []);
+
   const fetchSyncStatus = async () => {
     try {
       const token = localStorage.getItem("admin_token") || localStorage.getItem("token");
@@ -94,20 +99,38 @@ export default function MeetingsHub() {
       });
 
       setMeetings(response.data.meetings || []);
-      
-      // Calculate stats
-      const allMeetings = response.data.meetings || [];
-      setStats({
-        total: response.data.total || 0,
-        attio: allMeetings.filter(m => m.source === "attio" || m.source === "both").length,
-        fireflies: allMeetings.filter(m => m.source === "fireflies" || m.source === "both").length,
-        with_recordings: allMeetings.filter(m => m.has_recording).length
-      });
     } catch (error) {
       console.error("Error fetching meetings:", error);
       toast.error("Failed to fetch meetings");
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Stats are GLOBAL (across all sources) — fetched from a separate API
+  // so they don't change when the user switches tabs.
+  const fetchGlobalStats = async () => {
+    try {
+      const token = localStorage.getItem("admin_token") || localStorage.getItem("token");
+      const headers = { Authorization: `Bearer ${token}` };
+      const [allRes, attioRes, ffRes] = await Promise.all([
+        axios.get(`${API}/meetings?limit=1`, { headers }),
+        axios.get(`${API}/meetings/attio?limit=1`, { headers }),
+        axios.get(`${API}/meetings/fireflies?limit=1`, { headers }),
+      ]);
+      // For "with recordings" do a fast filter call
+      const recRes = await axios.get(
+        `${API}/meetings?limit=1&has_recording=true`,
+        { headers }
+      );
+      setStats({
+        total: allRes.data.total || 0,
+        attio: attioRes.data.total || 0,
+        fireflies: ffRes.data.total || 0,
+        with_recordings: recRes.data.total || 0,
+      });
+    } catch (error) {
+      console.error("Error fetching global stats:", error);
     }
   };
 
@@ -136,6 +159,7 @@ export default function MeetingsHub() {
         if (!status.data.is_syncing) {
           clearInterval(interval);
           fetchMeetings();
+          fetchGlobalStats();
           toast.success(`Sync complete! Found ${status.data.total_meetings} meetings.`);
         }
       }, 3000);

@@ -66,7 +66,12 @@ export default function MeetingDetailDrawer({ meeting, open, onClose }) {
       });
       setTranscript(response.data);
     } catch (error) {
-      console.error("Error fetching transcript:", error);
+      // 404 simply means provider tier (e.g. Fireflies free) doesn't expose
+      // the transcript body — render the empty-state silently.
+      if (error?.response?.status !== 404) {
+        console.error("Error fetching transcript:", error);
+      }
+      setTranscript(null);
     } finally {
       setLoadingTranscript(false);
     }
@@ -391,7 +396,28 @@ export default function MeetingDetailDrawer({ meeting, open, onClose }) {
               ) : (
                 <div className="text-center py-8">
                   <FileText className="w-12 h-12 mx-auto text-gray-400 mb-2" />
-                  <p className="text-gray-500">No transcript available</p>
+                  <p className="text-gray-700 font-medium">Transcript unavailable</p>
+                  <p className="text-xs text-gray-500 mt-1 max-w-sm mx-auto">
+                    {meeting.source === "fireflies"
+                      ? "Fireflies free tier doesn't expose transcript text via API. Open the recording in Fireflies to view the full transcript."
+                      : "No transcript has been generated for this meeting yet."}
+                  </p>
+                  {meeting.source === "fireflies" && meeting.fireflies_id && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="mt-3"
+                      onClick={() =>
+                        window.open(
+                          `https://app.fireflies.ai/view/${meeting.fireflies_id}`,
+                          "_blank"
+                        )
+                      }
+                    >
+                      Open in Fireflies
+                      <ExternalLink className="w-3 h-3 ml-2" />
+                    </Button>
+                  )}
                 </div>
               )}
             </TabsContent>
