@@ -24,16 +24,14 @@ class FirefliesClient:
         from_date: Optional[str] = None,
         to_date: Optional[str] = None
     ) -> List[Dict[str, Any]]:
-        """Get list of transcripts - simplified query without optional filters"""
+        """Get list of transcripts - minimal query without paid fields"""
         query = gql("""
             query GetTranscripts($limit: Int, $skip: Int) {
                 transcripts(limit: $limit, skip: $skip) {
                     id
                     title
-                    dateString
                     date
                     duration
-                    host_email
                     participants
                     meeting_attendees {
                         name
@@ -42,14 +40,9 @@ class FirefliesClient:
                     summary {
                         action_items
                         overview
-                        bullet_gist
-                        topics_discussed
+                        shorthand_bullet
                         keywords
-                        meeting_type
                     }
-                    audio_url
-                    video_url
-                    transcript_url
                 }
             }
         """)
@@ -70,16 +63,19 @@ class FirefliesClient:
                     filtered = []
                     for t in transcripts:
                         if t.get("date"):
-                            t_date = parser.parse(t["date"])
-                            if from_date:
-                                from_d = parser.parse(from_date)
-                                if t_date < from_d:
-                                    continue
-                            if to_date:
-                                to_d = parser.parse(to_date)
-                                if t_date > to_d:
-                                    continue
-                            filtered.append(t)
+                            try:
+                                t_date = parser.parse(t["date"])
+                                if from_date:
+                                    from_d = parser.parse(from_date)
+                                    if t_date < from_d:
+                                        continue
+                                if to_date:
+                                    to_d = parser.parse(to_date)
+                                    if t_date > to_d:
+                                        continue
+                                filtered.append(t)
+                            except:
+                                pass
                     return filtered
                 
                 return transcripts

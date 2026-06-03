@@ -109,48 +109,51 @@ class MeetingsService:
         """Convert Fireflies transcript data to Meeting model"""
         participants = []
         for attendee in transcript_data.get("meeting_attendees", []):
-            participants.append(MeetingParticipant(
-                name=attendee.get("name", ""),
-                email=attendee.get("email", "")
-            ))
+            if attendee.get("email") or attendee.get("name"):
+                participants.append(MeetingParticipant(
+                    name=attendee.get("name", "Unknown"),
+                    email=attendee.get("email", "")
+                ))
+        
+        # Parse Fireflies date (Unix timestamp in milliseconds)
+        start_time = None
+        if transcript_data.get("date"):
+            try:
+                # Fireflies uses milliseconds since epoch
+                timestamp = int(transcript_data["date"]) / 1000
+                from datetime import datetime, timezone
+                start_time = datetime.fromtimestamp(timestamp, tz=timezone.utc).isoformat()
+            except:
+                start_time = transcript_data.get("date")
         
         # Extract action items
         summary = transcript_data.get("summary", {})
         action_items = summary.get("action_items", [])
         action_items_count = len(action_items) if isinstance(action_items, list) else 0
         
-        # Sentiment
-        sentiment = None
-        analytics = transcript_data.get("analytics", {})
-        if analytics and analytics.get("sentiments"):
-            sent = analytics["sentiments"]
-            sentiment = MeetingSentiment(
-                positive=sent.get("positive_pct", 0),
-                negative=sent.get("negative_pct", 0),
-                neutral=sent.get("neutral_pct", 0)
-            )
+        # Duration in minutes
+        duration_minutes = None
+        if transcript_data.get("duration"):
+            duration_minutes = int(transcript_data["duration"] / 60)
+        
+        # Extract summary text
+        summary_text = summary.get("overview", summary.get("shorthand_bullet", ""))
+        if isinstance(summary_text, list):
+            summary_text = " ".join(summary_text)
         
         return Meeting(
             id=f"fireflies_{transcript_data['id']}",
             source="fireflies",
             fireflies_id=transcript_data["id"],
             title=transcript_data.get("title", "Untitled Meeting"),
-            start_time=transcript_data.get("date"),
-            duration_minutes=transcript_data.get("duration"),
+            start_time=start_time,
+            duration_minutes=duration_minutes,
             participants=participants,
-            host_email=transcript_data.get("host_email"),
-            summary=summary.get("overview"),
-            topics=summary.get("topics_discussed", []) if summary.get("topics_discussed") else [],
+            summary=summary_text,
             keywords=summary.get("keywords", []) if summary.get("keywords") else [],
-            has_recording=bool(transcript_data.get("audio_url") or transcript_data.get("video_url")),
-            has_video=bool(transcript_data.get("video_url")),
-            has_audio=bool(transcript_data.get("audio_url")),
+            has_recording=True,  # Fireflies always has recordings
             has_transcript=True,
             action_items_count=action_items_count,
-            sentiment=sentiment,
-            audio_url=transcript_data.get("audio_url"),
-            video_url=transcript_data.get("video_url"),
-            meeting_type=summary.get("meeting_type"),
             raw_data=transcript_data
         )
     
@@ -230,9 +233,9 @@ class MeetingsService:
                 
                 skip += batch_size
             
-            # Sort by date descending (prioritize latest)
+            # Sort by date descending (prioritize latest) - ALL meetings
             fireflies_transcripts.sort(
-                key=lambda x: x.get('date', ''), 
+                key=lambda x: x.get('date', 0), 
                 reverse=True
             )
             
@@ -243,6 +246,12 @@ class MeetingsService:
             for meeting in attio_meetings:
                 processed = await self._process_attio_meeting(meeting)
                 processed_attio.append(processed.model_dump())
+            
+            # Sort Attio by date too (latest first)
+            processed_attio.sort(
+                key=lambda x: x.get('start_time', ''),
+                reverse=True
+            )
             
             processed_fireflies = []
             for transcript in fireflies_transcripts:
@@ -287,6 +296,14 @@ class MeetingsService:
             for i, ff_meeting in enumerate(processed_fireflies):
                 if i not in matched_fireflies:
                     merged_meetings.append(ff_meeting)
+            
+            # SORT ALL MEETINGS BY DATE (LATEST FIRST)
+            merged_meetings.sort(
+                key=lambda x: x.get('start_time', ''),
+                reverse=True
+            )
+            
+            print(f"✅ Total merged meetings: {len(merged_meetings)} (sorted latest first)")
             
             # Upsert to MongoDB
             for meeting in merged_meetings:
