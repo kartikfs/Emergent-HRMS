@@ -20,12 +20,12 @@ meeting data from Attio CRM and Fireflies AI into one unified view.
 
 ## Implemented (Feb 2026 session)
 - ✅ Admin & employee login (bcrypt) — `/login`, `/employee/login`
-- ✅ Attio CRM client (REST) — `attio_client.py`
+- ✅ Attio CRM client (REST) — `attio_client.py` with batch record-name resolution
 - ✅ Fireflies AI client (GraphQL, free-tier safe) — `fireflies_client.py`
 - ✅ Meetings sync pipeline with deduplication — `meetings_service.py`
 - ✅ Meetings Hub UI with 4 tabs (All / Attio / Fireflies / Timeline) — `MeetingsHub.js`
 - ✅ Date-grouped All Meetings list (Today / Yesterday / This week / Earlier this month / Older)
-- ✅ Polished MeetingCard with participants avatars + indicator badges
+- ✅ Polished MeetingCard with participants avatars + indicator badges + linked-company chips
 - ✅ Month / Week / Day calendar timeline — `MeetingsTimeline.js`
 - ✅ Meeting drawer with Summary / Transcript / Actions / **AI Chat** — `MeetingDetailDrawer.js`
 - ✅ **AI Chat (GPT-5.2)** via Emergent Universal Key — `/api/meetings/{id}/chat`
@@ -33,6 +33,13 @@ meeting data from Attio CRM and Fireflies AI into one unified view.
 - ✅ Sort latest → oldest across All / Attio / Fireflies / Timeline
 - ✅ Global stat cards (Total / Attio / Fireflies / With Recordings) — fetched independent of active tab
 - ✅ Sync resilience — per-row try/except, partial-failure logging, MongoDB upsert tolerant
+- ✅ Single-meeting GET `/api/meetings/{id}` for shareable links + Copy-link button in drawer
+- ✅ Employee Meeting Profile UI on `/employees/:id`
+- ✅ Dashboard trends endpoint fixed (was returning literal `null`)
+- ✅ **Attio data enrichment**: meeting `description` surfaced as summary; linked companies & people resolved to display names; rendered as labelled chips in drawer + card.
+- ✅ **Fireflies data enrichment**: `action_items_list` parsed (handles both list-of-strings and multi-line markdown); shown inline in Summary tab + full list in Actions tab.
+- ✅ **Fireflies transcript on free tier**: `sentences` field now fetched (previously broken by `audio_url`/`analytics` co-fields that required Pro).
+- ✅ **Search** across title / summary / participants / topics / keywords / linked company names / linked contact names / action items — verified: BCG→8, Wordflex→1, Boston Consulting→6, Afore→13, Zoom→23.
 
 ## Backlog (P1 / P2)
 - P1 Employee Meeting Profile — show meetings on each employee's detail page (endpoint exists at `GET /api/employees/{id}/meetings`; UI not built yet).
