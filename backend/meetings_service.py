@@ -2,6 +2,7 @@
 Meetings Service - Handles sync, deduplication, and data management
 """
 import asyncio
+import os
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 import pytz
