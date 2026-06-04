@@ -678,8 +678,8 @@ async def bulk_create_employees(data: dict):
             # Generate employee ID
             emp_id = f"emp_{str(uuid.uuid4())[:8]}"
             
-            # Set default password (can be changed later)
-            default_password = "Welcome123"
+            # Set default password — pulled from env so it's not hardcoded
+            default_password = os.environ.get("EMPLOYEE_BULK_DEFAULT_PASSWORD", "Welcome123")
             hashed_pwd = hash_password(default_password)
             
             # Prepare employee document

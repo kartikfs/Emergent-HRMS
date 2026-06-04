@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Calendar, Video, Users, Clock, TrendingUp, Filter, Search, RefreshCw, Download } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -93,7 +93,7 @@ export default function MeetingsHub() {
     if (routeMeetingId) navigate("/meetings", { replace: false });
   };
 
-  const fetchSyncStatus = async () => {
+  const fetchSyncStatus = useCallback(async () => {
     try {
       const token = localStorage.getItem("admin_token") || localStorage.getItem("token");
       const response = await axios.get(`${API}/meetings/sync-status`, {
@@ -103,9 +103,9 @@ export default function MeetingsHub() {
     } catch (error) {
       console.error("Error fetching sync status:", error);
     }
-  };
+  }, []);
 
-  const fetchMeetings = async () => {
+  const fetchMeetings = useCallback(async () => {
     try {
       setLoading(true);
       const token = localStorage.getItem("admin_token") || localStorage.getItem("token");
@@ -143,7 +143,7 @@ export default function MeetingsHub() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [activeTab, filters]);
 
   // Stats are GLOBAL (across all sources, all time ranges) — fetched from a
   // separate API so they don't change when the user switches tabs/time-range.

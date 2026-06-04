@@ -150,6 +150,13 @@ class MeetingsService:
             if n:
                 contact_names.append(n)
 
+        # Compute host email: first organizer participant, if any
+        host_email: Optional[str] = None
+        for participant in participants:
+            if participant.role == "organizer":
+                host_email = participant.email
+                break
+
         return Meeting(
             id=f"attio_{meeting_id}",
             source="attio",
@@ -159,7 +166,7 @@ class MeetingsService:
             end_time=end_time,
             duration_minutes=duration,
             participants=participants,
-            host_email=next((p.email for p in participants if p.role == "organizer"), None),
+            host_email=host_email,
             summary=meeting_data.get("description") or None,
             has_recording=has_recordings,
             has_transcript=has_recordings,
