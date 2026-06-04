@@ -57,6 +57,7 @@ export default function MeetingDetailDrawer({ meeting, open, onClose }) {
     // recordings list (Fireflies always has the deep-link entry pre-populated).
     if (!meeting?.attio_id) return;
     if (meeting.recordings && meeting.recordings.length > 0) return;
+    if (lazyRecordings !== null) return; // already fetched (handles StrictMode double-effect)
     try {
       const res = await axios.get(`${API}/meetings/${meeting.id}/recordings`, {
         headers: authHeaders(),
