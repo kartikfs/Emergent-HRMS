@@ -196,7 +196,7 @@ function MonthGrid({ cursor, meetingsOn, onSelectMeeting }) {
         const isToday = sameDay(day, today);
         return (
           <div
-            key={idx}
+            key={day.toISOString().slice(0, 10)}
             className={`bg-white min-h-[110px] p-1.5 flex flex-col gap-1 ${
               !inMonth ? "opacity-40" : ""
             }`}
@@ -251,7 +251,7 @@ function WeekColumns({ cursor, meetingsOn, onSelectMeeting }) {
         const isToday = sameDay(day, today);
         return (
           <div
-            key={i}
+            key={day.toISOString().slice(0, 10)}
             className="border rounded-lg flex flex-col min-h-[260px]"
             data-testid={`timeline-week-col-${i}`}
           >

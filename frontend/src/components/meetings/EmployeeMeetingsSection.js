@@ -45,8 +45,11 @@ export default function EmployeeMeetingsSection({ employeeId }) {
     try {
       const res = await axios.get(`${API}/employees/${employeeId}`, { headers: authHeaders() });
       setEmployee(res.data);
-    } catch (e) {
-      // ignore - might be 404 outside admin context
+    } catch (error) {
+      // 403/404 in non-admin context is expected — surface anything else
+      if (error?.response?.status !== 404 && error?.response?.status !== 403) {
+        console.error("Failed to fetch employee:", error);
+      }
     }
   };
 

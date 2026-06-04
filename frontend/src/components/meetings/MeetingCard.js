@@ -123,7 +123,7 @@ export default function MeetingCard({ meeting, onClick }) {
               <div className="flex items-center -space-x-1.5 mb-2">
                 {meeting.participants.slice(0, 5).map((p, i) => (
                   <div
-                    key={i}
+                    key={p.email || `${p.name || "p"}-${i}`}
                     title={`${p.name}${p.email ? ` · ${p.email}` : ""}`}
                     className="w-6 h-6 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-white text-[10px] font-semibold flex items-center justify-center ring-2 ring-white"
                   >
@@ -179,7 +179,7 @@ export default function MeetingCard({ meeting, onClick }) {
               )}
               {meeting.keywords?.slice(0, 3).map((kw, i) => (
                 <Badge
-                  key={i}
+                  key={`kw-${kw}-${i}`}
                   variant="outline"
                   className="bg-gray-50 text-gray-700 text-[10px] py-0"
                 >

@@ -195,13 +195,14 @@ class MeetingsService:
                 timestamp = int(transcript_data["date"]) / 1000
                 from datetime import datetime, timezone
                 start_time = datetime.fromtimestamp(timestamp, tz=timezone.utc).isoformat()
-            except:
+            except (ValueError, TypeError, OSError):
                 start_time = transcript_data.get("date")
         
         # Extract action items
         summary = transcript_data.get("summary") or {}
         action_items_raw = summary.get("action_items") or []
         # Fireflies returns action_items either as List[str] or as a multi-line string
+        action_items_list: list = []  # initialize so it's defined for every code path
         if isinstance(action_items_raw, str):
             action_items_list = [
                 line.strip("- •*\t ").strip()
@@ -213,8 +214,6 @@ class MeetingsService:
                 (a if isinstance(a, str) else (a.get("text") or str(a)))
                 for a in action_items_raw
             ]
-        else:
-            action_items_list = []
         action_items_count = len(action_items_list)
         
         # Duration in minutes

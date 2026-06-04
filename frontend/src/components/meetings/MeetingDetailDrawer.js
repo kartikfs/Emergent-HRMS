@@ -63,8 +63,13 @@ export default function MeetingDetailDrawer({ meeting, open, onClose }) {
         headers: authHeaders(),
       });
       setLazyRecordings(res.data.recordings || []);
-    } catch (e) {
-      // 404 / 403 is fine — just leave recordings empty
+    } catch (error) {
+      // 404/403 from Attio is expected when no recording exists; log lower
+      // priority so it doesn't pollute the console but still surfaces in tools.
+      if (error?.response?.status !== 404 && error?.response?.status !== 403) {
+        console.error("Failed to lazy-fetch recordings:", error);
+      }
+      setLazyRecordings([]);
     }
   };
 
@@ -293,7 +298,7 @@ export default function MeetingDetailDrawer({ meeting, open, onClose }) {
               <div className="space-y-2">
                 {meeting.participants.map((participant, i) => (
                   <div
-                    key={i}
+                    key={participant.email || `${participant.name || 'p'}-${i}`}
                     className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg"
                   >
                     <div className="w-8 h-8 rounded-full bg-blue-500 text-white flex items-center justify-center font-semibold text-sm">
@@ -428,7 +433,7 @@ export default function MeetingDetailDrawer({ meeting, open, onClose }) {
                   <ul className="space-y-1.5">
                     {meeting.action_items_list.slice(0, 8).map((item, i) => (
                       <li
-                        key={i}
+                        key={`ai-${i}-${item.slice(0, 24)}`}
                         className="text-sm text-gray-700 pl-3 border-l-2 border-orange-300"
                       >
                         {item}
@@ -448,7 +453,7 @@ export default function MeetingDetailDrawer({ meeting, open, onClose }) {
                   <h4 className="font-semibold mb-2">Topics Discussed</h4>
                   <div className="flex flex-wrap gap-2">
                     {meeting.topics.map((topic, i) => (
-                      <Badge key={i} variant="outline">
+                      <Badge key={`topic-${topic}-${i}`} variant="outline">
                         {topic}
                       </Badge>
                     ))}
@@ -461,7 +466,7 @@ export default function MeetingDetailDrawer({ meeting, open, onClose }) {
                   <h4 className="font-semibold mb-2">Keywords</h4>
                   <div className="flex flex-wrap gap-2">
                     {meeting.keywords.map((keyword, i) => (
-                      <Badge key={i} variant="secondary" className="bg-gray-100">
+                      <Badge key={`kw-${keyword}-${i}`} variant="secondary" className="bg-gray-100">
                         {keyword}
                       </Badge>
                     ))}
@@ -481,7 +486,10 @@ export default function MeetingDetailDrawer({ meeting, open, onClose }) {
                     {transcript.lines.length} lines · scroll to read
                   </p>
                   {transcript.lines.map((line, i) => (
-                    <div key={i} className="flex gap-3 p-3 rounded-lg hover:bg-gray-50">
+                    <div
+                      key={`line-${i}-${line.start_time}`}
+                      className="flex gap-3 p-3 rounded-lg hover:bg-gray-50"
+                    >
                       <div className="w-24 flex-shrink-0">
                         <p className="text-xs text-gray-500">
                           {Math.floor(line.start_time / 60)}:
@@ -573,7 +581,7 @@ export default function MeetingDetailDrawer({ meeting, open, onClose }) {
                   </p>
                   {meeting.action_items_list.map((text, i) => (
                     <div
-                      key={i}
+                      key={`act-${i}-${text.slice(0, 24)}`}
                       className="flex items-start gap-3 p-3 border rounded-lg"
                     >
                       <div className="mt-1 w-5 h-5 rounded border-2 border-gray-300 flex-shrink-0" />

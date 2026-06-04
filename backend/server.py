@@ -2226,6 +2226,8 @@ async def chat_with_meeting(
     if not emergent_key:
         raise HTTPException(status_code=500, detail="EMERGENT_LLM_KEY not configured")
 
+    answer: str = ""  # initialized so it's defined on every code path
+
     system_prompt = (
         "You are an assistant that answers questions about a specific business meeting. "
         "Use ONLY the provided meeting context (summary, transcript, participants) to answer. "
