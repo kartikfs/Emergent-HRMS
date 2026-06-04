@@ -38,6 +38,7 @@ export default function MeetingsHub() {
     has_action_items: null,
     sort_by: "start_time",
     sort_order: "desc",
+    time_range: "past",  // past | upcoming | all
     limit: 500,
     offset: 0
   });
@@ -353,7 +354,28 @@ export default function MeetingsHub() {
                 />
               </div>
             </form>
-            
+
+            <div className="flex gap-1 bg-gray-100 rounded-md p-1" data-testid="time-range-toggle">
+              {[
+                { key: "past", label: "Past" },
+                { key: "upcoming", label: "Upcoming" },
+                { key: "all", label: "All" },
+              ].map((opt) => (
+                <button
+                  key={opt.key}
+                  onClick={() => setFilters({ ...filters, time_range: opt.key })}
+                  data-testid={`time-range-${opt.key}`}
+                  className={`px-3 py-1 text-sm rounded ${
+                    filters.time_range === opt.key
+                      ? "bg-white shadow text-gray-900 font-medium"
+                      : "text-gray-500 hover:text-gray-700"
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+
             <Button
               variant="outline"
               onClick={() => setShowFilters(!showFilters)}

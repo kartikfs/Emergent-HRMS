@@ -290,7 +290,7 @@ export default function MeetingDetailDrawer({ meeting, open, onClose }) {
                 <Users className="w-5 h-5" />
                 Participants ({meeting.participants.length})
               </h3>
-              <div className="space-y-2 max-h-48 overflow-y-auto">
+              <div className="space-y-2">
                 {meeting.participants.map((participant, i) => (
                   <div
                     key={i}
@@ -476,7 +476,10 @@ export default function MeetingDetailDrawer({ meeting, open, onClose }) {
                   <p className="text-gray-500">Loading transcript...</p>
                 </div>
               ) : transcript && transcript.lines ? (
-                <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-2">
+                <div className="space-y-3" data-testid="transcript-lines">
+                  <p className="text-xs text-gray-500 sticky top-0 bg-white py-1 z-[1]">
+                    {transcript.lines.length} lines · scroll to read
+                  </p>
                   {transcript.lines.map((line, i) => (
                     <div key={i} className="flex gap-3 p-3 rounded-lg hover:bg-gray-50">
                       <div className="w-24 flex-shrink-0">
@@ -486,7 +489,9 @@ export default function MeetingDetailDrawer({ meeting, open, onClose }) {
                         </p>
                         <p className="font-medium text-sm text-gray-700">{line.speaker}</p>
                       </div>
-                      <p className="text-sm text-gray-800 flex-1">{line.text}</p>
+                      <p className="text-sm text-gray-800 flex-1 whitespace-pre-wrap">
+                        {line.text}
+                      </p>
                     </div>
                   ))}
                 </div>

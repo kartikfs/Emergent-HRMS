@@ -1539,20 +1539,36 @@ async def get_meetings(
     has_video: Optional[bool] = None,
     sentiment: Optional[str] = None,
     host_email: Optional[str] = None,
+    time_range: str = "past",  # past | upcoming | all
     sort_by: str = "start_time",
     sort_order: str = "desc",
     limit: int = 50,
     offset: int = 0,
     current_user: dict = Depends(get_current_user)
 ):
-    """Get all meetings with filters"""
-    query = {}
+    """Get all meetings with filters. By default returns PAST meetings only
+    (start_time <= now) sorted latest-first, which is what users almost
+    always want. Use `time_range=upcoming` to see future-scheduled meetings,
+    or `time_range=all` to include both."""
+    from datetime import datetime, timezone as _tz
+    query: dict = {}
+
+    # Default to past meetings (latest first) — exclude future placeholders
+    now_iso = datetime.now(_tz.utc).isoformat()
+    if time_range == "past":
+        query["start_time"] = {"$lte": now_iso}
+    elif time_range == "upcoming":
+        query["start_time"] = {"$gt": now_iso}
+    # time_range="all" → no filter
     
     # Build query
     if start_date:
-        query["start_time"] = {"$gte": start_date}
+        if "start_time" in query and isinstance(query["start_time"], dict):
+            query["start_time"]["$gte"] = start_date
+        else:
+            query["start_time"] = {"$gte": start_date}
     if end_date:
-        if "start_time" in query:
+        if "start_time" in query and isinstance(query["start_time"], dict):
             query["start_time"]["$lte"] = end_date
         else:
             query["start_time"] = {"$lte": end_date}
@@ -1629,32 +1645,38 @@ async def get_attio_meetings(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     linked_company: Optional[str] = None,
+    time_range: str = "past",
     limit: int = 50,
     offset: int = 0,
     current_user: dict = Depends(get_current_user)
 ):
-    """Get Attio-only meetings"""
-    query = {
-        "$or": [
-            {"source": "attio"},
-            {"source": "both", "attio_id": {"$exists": True}}
+    """Get Attio-only meetings (default: past meetings only, latest first)."""
+    from datetime import datetime, timezone as _tz
+    query: dict = {
+        "$and": [
+            {"$or": [
+                {"source": "attio"},
+                {"source": "both", "attio_id": {"$exists": True}}
+            ]}
         ]
     }
-    
+    now_iso = datetime.now(_tz.utc).isoformat()
+    if time_range == "past":
+        query["$and"].append({"start_time": {"$lte": now_iso}})
+    elif time_range == "upcoming":
+        query["$and"].append({"start_time": {"$gt": now_iso}})
+
     if start_date:
-        query["start_time"] = {"$gte": start_date}
+        query["$and"].append({"start_time": {"$gte": start_date}})
     if end_date:
-        if "start_time" in query:
-            query["start_time"]["$lte"] = end_date
-        else:
-            query["start_time"] = {"$lte": end_date}
+        query["$and"].append({"start_time": {"$lte": end_date}})
     
     if linked_company:
-        query["linked_companies"] = linked_company
+        query["$and"].append({"linked_companies": linked_company})
     
     # If not admin, filter by participation
     if current_user.get("role") != "admin":
-        query["participants.email"] = current_user.get("email")
+        query["$and"].append({"participants.email": current_user.get("email")})
     
     total = await db.meetings_cache.count_documents(query)
     meetings = await db.meetings_cache.find(query, {"_id": 0, "raw_data": 0}) \
