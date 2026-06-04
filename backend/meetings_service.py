@@ -309,28 +309,33 @@ class MeetingsService:
             print(f"🔄 Syncing meetings from {start_date.date()} to {end_date.date()}")
             
             # === FETCH FROM ATTIO ===
-            print("📞 Fetching Attio meetings...")
+            print("📞 Fetching Attio meetings (sort=start_desc, paginated)...")
             attio_meetings = []
             cursor = None
-            
+            page_no = 0
+            MAX_PAGES = 25  # 25 * 200 = 5000 meetings safety cap
+
             while True:
+                page_no += 1
                 result = await self.attio.list_meetings(limit=200, cursor=cursor)
                 meetings_data = result.get("data", [])
-                
+                print(f"  📄 Attio page {page_no}: {len(meetings_data)} meetings (running total: {len(attio_meetings) + len(meetings_data)})")
+
                 if not meetings_data:
                     break
-                
-                # Filter by date and get call recordings
-                for meeting in meetings_data:
-                    # Get call recordings for this meeting
-                    meeting_id = meeting.get("id", {}).get("meeting_id")
-                    if meeting_id:
-                        recordings_result = await self.attio.list_call_recordings(meeting_id, limit=10)
-                        meeting["call_recordings"] = recordings_result.get("data", [])
-                        attio_meetings.append(meeting)
-                
+
+                # NOTE: We skip the per-meeting call_recordings fetch here for speed
+                # (2848 meetings * 1 call = ~10 min). The drawer fetches recordings
+                # lazily via /api/meetings/{id}/recordings on demand and caches them.
+                for m in meetings_data:
+                    m["call_recordings"] = []  # lazy
+                    attio_meetings.append(m)
+
                 cursor = result.get("next_cursor")
                 if not cursor:
+                    break
+                if page_no >= MAX_PAGES:
+                    print(f"  ⚠️ Hit MAX_PAGES safety cap ({MAX_PAGES})")
                     break
             
             print(f"✅ Fetched {len(attio_meetings)} Attio meetings")
@@ -373,6 +378,32 @@ class MeetingsService:
             # "recording" entry and fetch sentences on-demand in the drawer.
             
             # Process and deduplicate
+            # Step 1: warm the linked-record name cache in parallel before
+            # individual meeting processing (avoids 1000s of sequential calls)
+            unique_refs = set()
+            for m in attio_meetings:
+                for rec in (m.get("linked_records") or []):
+                    slug = rec.get("object_slug")
+                    rid = rec.get("record_id")
+                    if rid and slug in ("companies", "people", "contacts"):
+                        # Normalize people/contacts to "people"
+                        ns = "people" if slug in ("people", "contacts") else slug
+                        unique_refs.add((ns, rid))
+            print(f"🔎 Resolving {len(unique_refs)} unique linked Attio records (parallel)...")
+
+            sem = asyncio.Semaphore(30)
+
+            async def _warm(slug, rid):
+                async with sem:
+                    n = await self._resolve_attio_name(slug, rid)
+                    return (slug, rid, n)
+
+            await asyncio.gather(
+                *[_warm(s, r) for s, r in unique_refs],
+                return_exceptions=True,
+            )
+            print(f"✅ Linked records cached (cache size: {len(self._attio_name_cache)})")
+
             processed_attio = []
             for meeting in attio_meetings:
                 try:

@@ -24,12 +24,72 @@ export default function EmployeeMeetingsSection({ employeeId }) {
   const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [employee, setEmployee] = useState(null);
+  const [aliasInput, setAliasInput] = useState("");
+  const [savingAlias, setSavingAlias] = useState(false);
 
   useEffect(() => {
     if (!employeeId) return;
     fetchMeetings();
+    fetchEmployee();
     // eslint-disable-next-line
   }, [employeeId]);
+
+  const authHeaders = () => {
+    const token =
+      localStorage.getItem("admin_token") || localStorage.getItem("token");
+    return { Authorization: `Bearer ${token}` };
+  };
+
+  const fetchEmployee = async () => {
+    try {
+      const res = await axios.get(`${API}/employees/${employeeId}`, { headers: authHeaders() });
+      setEmployee(res.data);
+    } catch (e) {
+      // ignore - might be 404 outside admin context
+    }
+  };
+
+  const addAlias = async () => {
+    const value = aliasInput.trim().toLowerCase();
+    if (!value || !value.includes("@")) {
+      toast.error("Enter a valid email");
+      return;
+    }
+    const next = Array.from(new Set([...(employee?.email_aliases || []), value]));
+    setSavingAlias(true);
+    try {
+      await axios.put(
+        `${API}/employees/${employeeId}/email-aliases`,
+        next,
+        { headers: { ...authHeaders(), "Content-Type": "application/json" } }
+      );
+      toast.success(`Added alias ${value}. Meetings will appear shortly.`);
+      setAliasInput("");
+      setEmployee({ ...employee, email_aliases: next });
+      fetchMeetings();
+    } catch (e) {
+      toast.error("Failed to add alias");
+    } finally {
+      setSavingAlias(false);
+    }
+  };
+
+  const removeAlias = async (alias) => {
+    const next = (employee?.email_aliases || []).filter((a) => a !== alias);
+    try {
+      await axios.put(
+        `${API}/employees/${employeeId}/email-aliases`,
+        next,
+        { headers: { ...authHeaders(), "Content-Type": "application/json" } }
+      );
+      toast.success(`Removed alias ${alias}`);
+      setEmployee({ ...employee, email_aliases: next });
+      fetchMeetings();
+    } catch (e) {
+      toast.error("Failed to remove alias");
+    }
+  };
 
   const fetchMeetings = async () => {
     setLoading(true);
@@ -46,9 +106,7 @@ export default function EmployeeMeetingsSection({ employeeId }) {
     } finally {
       setLoading(false);
     }
-  };
-
-  const formatHours = (mins) => {
+  };  const formatHours = (mins) => {
     if (!mins) return "0h";
     const h = Math.floor(mins / 60);
     const m = mins % 60;
@@ -99,6 +157,59 @@ export default function EmployeeMeetingsSection({ employeeId }) {
         </Button>
       </CardHeader>
       <CardContent>
+        {/* Email Aliases editor */}
+        <div className="mb-4 p-3 rounded-lg border bg-amber-50/50">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
+              Email Aliases ({(employee?.email_aliases || []).length})
+            </p>
+            <p className="text-[10px] text-gray-500">
+              Add other emails this person uses in Attio / Fireflies to see their meetings here
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-1.5 mb-2">
+            {(employee?.email_aliases || []).map((a) => (
+              <Badge
+                key={a}
+                variant="outline"
+                className="bg-white text-amber-700 border-amber-300 pl-2 pr-1 py-0 gap-1"
+                data-testid={`alias-${a}`}
+              >
+                {a}
+                <button
+                  className="ml-1 hover:text-red-500"
+                  onClick={() => removeAlias(a)}
+                  data-testid={`remove-alias-${a}`}
+                >
+                  ✕
+                </button>
+              </Badge>
+            ))}
+            {(employee?.email_aliases || []).length === 0 && (
+              <span className="text-xs text-gray-400">No aliases yet.</span>
+            )}
+          </div>
+          <div className="flex gap-2">
+            <input
+              type="email"
+              value={aliasInput}
+              onChange={(e) => setAliasInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && addAlias()}
+              placeholder="name@company.com"
+              className="flex-1 px-2 py-1 text-sm border rounded"
+              data-testid="alias-input"
+            />
+            <Button
+              size="sm"
+              onClick={addAlias}
+              disabled={savingAlias || !aliasInput.trim()}
+              data-testid="add-alias-btn"
+            >
+              Add alias
+            </Button>
+          </div>
+        </div>
+
         {/* Stats strip */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
           <StatTile

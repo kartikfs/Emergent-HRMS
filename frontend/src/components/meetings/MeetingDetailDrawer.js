@@ -28,6 +28,7 @@ export default function MeetingDetailDrawer({ meeting, open, onClose }) {
   const [transcript, setTranscript] = useState(null);
   const [loadingTranscript, setLoadingTranscript] = useState(false);
   const [actionItems, setActionItems] = useState([]);
+  const [lazyRecordings, setLazyRecordings] = useState(null);
 
   // AI chat state
   const [chatMessages, setChatMessages] = useState([]);
@@ -41,13 +42,30 @@ export default function MeetingDetailDrawer({ meeting, open, onClose }) {
       fetchTranscript();
       fetchActionItems();
       fetchChatHistory();
+      fetchLazyRecordings();
     } else {
       // reset on close
       setChatMessages([]);
       setChatInput("");
       setTranscript(null);
+      setLazyRecordings(null);
     }
   }, [open, meeting?.id]);
+
+  const fetchLazyRecordings = async () => {
+    // Only lazy-fetch for Attio meetings that don't already have a populated
+    // recordings list (Fireflies always has the deep-link entry pre-populated).
+    if (!meeting?.attio_id) return;
+    if (meeting.recordings && meeting.recordings.length > 0) return;
+    try {
+      const res = await axios.get(`${API}/meetings/${meeting.id}/recordings`, {
+        headers: authHeaders(),
+      });
+      setLazyRecordings(res.data.recordings || []);
+    } catch (e) {
+      // 404 / 403 is fine — just leave recordings empty
+    }
+  };
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -201,6 +219,8 @@ export default function MeetingDetailDrawer({ meeting, open, onClose }) {
 
   const recordings = (meeting.recordings && meeting.recordings.length > 0)
     ? meeting.recordings
+    : (lazyRecordings && lazyRecordings.length > 0)
+    ? lazyRecordings
     : [
         meeting.video_url && { url: meeting.video_url, mime: "video/mp4", source: meeting.source, id: "v" },
         meeting.audio_url && { url: meeting.audio_url, mime: "audio/mpeg", source: meeting.source, id: "a" },

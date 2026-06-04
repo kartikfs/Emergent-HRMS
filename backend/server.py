@@ -130,6 +130,7 @@ class EmployeeCreate(BaseModel):
     manager_id: Optional[str] = None
     emergency_contact_name: Optional[str] = None
     emergency_contact_phone: Optional[str] = None
+    email_aliases: List[str] = []  # additional emails used in Attio/Fireflies
 
 class Employee(EmployeeCreate):
     model_config = ConfigDict(extra="ignore")
@@ -1751,6 +1752,63 @@ async def get_meeting_transcript(
     
     return transcript.model_dump()
 
+
+@api_router.get("/meetings/{meeting_id}/recordings")
+async def get_meeting_recordings(
+    meeting_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """Fetch & cache recording metadata for one meeting on demand.
+
+    Bulk sync skips per-meeting recording calls (2848 × 1 was too slow);
+    this endpoint fetches them lazily and persists to meetings_cache.
+    """
+    meeting = await db.meetings_cache.find_one({"id": meeting_id}, {"_id": 0})
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+
+    # Access control
+    if current_user.get("role") != "admin":
+        user_email = (current_user.get("email") or "").lower()
+        emails = [(p.get("email") or "").lower() for p in meeting.get("participants", [])]
+        if user_email not in emails:
+            raise HTTPException(status_code=403, detail="Access denied")
+
+    # Return cached recordings if already fetched
+    if meeting.get("recordings"):
+        return {"recordings": meeting["recordings"], "cached": True}
+
+    # Attio meetings: fetch live
+    if meeting.get("attio_id"):
+        from attio_client import AttioClient
+        c = AttioClient()
+        recs_resp = await c.list_call_recordings(meeting["attio_id"], limit=20)
+        raw = recs_resp.get("data", []) or []
+        recordings = []
+        for rec in raw:
+            rid_obj = rec.get("id", {})
+            rid = rid_obj.get("call_recording_id") if isinstance(rid_obj, dict) else str(rid_obj)
+            recordings.append({
+                "id": rid,
+                "url": rec.get("recording_url") or rec.get("playback_url") or rec.get("media_url") or rec.get("url"),
+                "mime": rec.get("mime_type") or rec.get("content_type"),
+                "duration": rec.get("duration_seconds") or rec.get("duration"),
+                "source": "attio",
+                "title": rec.get("title") or meeting.get("title"),
+            })
+        # Persist
+        await db.meetings_cache.update_one(
+            {"id": meeting_id},
+            {"$set": {
+                "recordings": recordings,
+                "has_recording": len(recordings) > 0,
+            }},
+        )
+        return {"recordings": recordings, "cached": False}
+
+    # Fireflies / other: nothing extra to fetch
+    return {"recordings": meeting.get("recordings", []), "cached": True}
+
 @api_router.get("/meetings/action-items")
 async def get_action_items(
     status: Optional[str] = None,
@@ -1830,32 +1888,72 @@ async def get_employee_meetings(
         raise HTTPException(status_code=403, detail="Access denied")
     
     employee_email = employee.get("email")
-    
-    # Get meetings
-    query = {"participants.email": employee_email}
+    aliases = employee.get("email_aliases") or []
+    # Collect all emails (primary + aliases) — case-insensitive match
+    all_emails = [e.lower() for e in [employee_email] + list(aliases) if e]
+
+    # Get meetings where the employee participated (primary email OR any alias)
+    query = {"participants.email": {"$in": all_emails}}
     total = await db.meetings_cache.count_documents(query)
     meetings = await db.meetings_cache.find(query, {"_id": 0, "raw_data": 0}) \
         .sort("start_time", -1) \
         .skip(offset) \
         .limit(limit) \
         .to_list(limit)
-    
-    # Calculate stats
-    total_meetings = len(meetings)
-    total_duration = sum(m.get("duration_minutes", 0) for m in meetings)
-    
-    # Top meeting partners
-    partner_counts = {}
-    for meeting in meetings:
-        for p in meeting.get("participants", []):
-            if p.get("email") != employee_email:
-                partner_email = p.get("email")
-                partner_name = p.get("name", partner_email)
-                if partner_email:
-                    partner_counts[partner_email] = partner_counts.get(partner_email, 0) + 1
-    
-    top_partners = sorted(partner_counts.items(), key=lambda x: x[1], reverse=True)[:5]
-    
+
+    # Stats helper accepts any of the user's emails
+    user_email_set = set(all_emails)
+
+    # Compute stats across ALL meetings (not just the current page)
+    # Use a MongoDB aggregation so we don't load 1000s of docs into memory.
+    stats_pipeline = [
+        {"$match": query},
+        {
+            "$group": {
+                "_id": None,
+                "total_meetings": {"$sum": 1},
+                "total_duration": {"$sum": {"$ifNull": ["$duration_minutes", 0]}},
+            }
+        },
+    ]
+    agg = await db.meetings_cache.aggregate(stats_pipeline).to_list(1)
+    if agg:
+        total_meetings = int(agg[0].get("total_meetings", 0))
+        total_duration = int(agg[0].get("total_duration", 0))
+    else:
+        total_meetings = 0
+        total_duration = 0
+
+    # Top meeting partners — also aggregated across the whole set
+    partners_pipeline = [
+        {"$match": query},
+        {"$unwind": "$participants"},
+        {
+            "$match": {
+                "participants.email": {
+                    "$nin": [None, ""],
+                    "$not": {
+                        "$in": list(user_email_set)
+                    },
+                },
+            }
+        },
+        {
+            "$group": {
+                "_id": {"$toLower": "$participants.email"},
+                "count": {"$sum": 1},
+                "name": {"$first": "$participants.name"},
+            }
+        },
+        {"$sort": {"count": -1}},
+        {"$limit": 5},
+    ]
+    partners_rows = await db.meetings_cache.aggregate(partners_pipeline).to_list(5)
+    top_partners_list = [
+        {"email": r["_id"], "name": r.get("name"), "count": r["count"]}
+        for r in partners_rows
+    ]
+
     return {
         "meetings": meetings,
         "total": total,
@@ -1863,7 +1961,7 @@ async def get_employee_meetings(
             "total_meetings": total_meetings,
             "total_duration_minutes": total_duration,
             "avg_duration_minutes": total_duration // total_meetings if total_meetings > 0 else 0,
-            "top_meeting_partners": [{"email": email, "count": count} for email, count in top_partners]
+            "top_meeting_partners": top_partners_list,
         }
     }
 
@@ -1911,6 +2009,78 @@ async def search_meetings(
         "query": q,
         "count": len(meetings)
     }
+
+
+@api_router.put("/employees/{employee_id}/email-aliases")
+async def update_employee_email_aliases(
+    employee_id: str,
+    aliases: List[str],
+    current_user: dict = Depends(get_current_user)
+):
+    """Add/replace the list of email aliases (admin or self)."""
+    if current_user.get("role") != "admin" and current_user.get("id") != employee_id:
+        raise HTTPException(status_code=403, detail="Access denied")
+    cleaned = list({(a or "").strip().lower() for a in aliases if a and a.strip()})
+    result = await db.employees.update_one(
+        {"id": employee_id},
+        {"$set": {"email_aliases": cleaned}},
+    )
+    if not result.matched_count:
+        raise HTTPException(status_code=404, detail="Employee not found")
+    return {"email_aliases": cleaned}
+
+
+@api_router.get("/meetings/unmapped-participants")
+async def get_unmapped_participants(
+    limit: int = 50,
+    current_user: dict = Depends(get_current_user)
+):
+    """Admin tool: list distinct meeting participant emails that are NOT
+    mapped to any employee (primary email OR alias). Lets HR invite or link
+    discovered contacts to PeopleHub employees."""
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+
+    # Gather all known employee emails (primary + aliases) — lowercased
+    known = set()
+    async for e in db.employees.find({}, {"_id": 0, "email": 1, "email_aliases": 1}):
+        if e.get("email"):
+            known.add(e["email"].lower())
+        for a in (e.get("email_aliases") or []):
+            if a:
+                known.add(a.lower())
+
+    # Aggregate distinct participant emails with counts
+    pipeline = [
+        {"$unwind": "$participants"},
+        {"$match": {"participants.email": {"$nin": [None, ""]}}},
+        {
+            "$group": {
+                "_id": {"$toLower": "$participants.email"},
+                "count": {"$sum": 1},
+                "name": {"$first": "$participants.name"},
+                "last_meeting": {"$max": "$start_time"},
+            }
+        },
+        {"$sort": {"count": -1}},
+        {"$limit": limit * 4},  # over-fetch so we can filter
+    ]
+    raw = await db.meetings_cache.aggregate(pipeline).to_list(limit * 4)
+    unmapped = []
+    for row in raw:
+        email = row["_id"]
+        if email in known:
+            continue
+        unmapped.append({
+            "email": email,
+            "name": row.get("name"),
+            "count": row["count"],
+            "last_meeting": row.get("last_meeting"),
+        })
+        if len(unmapped) >= limit:
+            break
+
+    return {"unmapped": unmapped, "total_known_employees": len(known)}
 
 
 # ============ MEETING AI CHAT ============

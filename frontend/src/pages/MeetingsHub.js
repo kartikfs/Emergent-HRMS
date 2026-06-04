@@ -12,6 +12,7 @@ import MeetingCard from "@/components/meetings/MeetingCard";
 import MeetingDetailDrawer from "@/components/meetings/MeetingDetailDrawer";
 import MeetingFilters from "@/components/meetings/MeetingFilters";
 import MeetingsTimeline from "@/components/meetings/MeetingsTimeline";
+import PeopleMappingPanel from "@/components/meetings/PeopleMappingPanel";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -333,6 +334,9 @@ export default function MeetingsHub() {
           </CardContent>
         </Card>
       )}
+
+      {/* People Mapping — link unmapped Attio/Fireflies emails to employees */}
+      <PeopleMappingPanel />
 
       {/* Search and Filters */}
       <Card>

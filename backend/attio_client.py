@@ -17,22 +17,39 @@ class AttioClient:
         }
     
     async def list_meetings(
-        self, 
+        self,
         limit: int = 50,
-        cursor: Optional[str] = None
+        cursor: Optional[str] = None,
+        sort: Optional[str] = "start_desc",
     ) -> Dict[str, Any]:
-        """List all meetings from Attio"""
+        """List meetings from Attio.
+
+        Returns: { data: [...], next_cursor: str|None }
+        Pagination cursor lives at `response.pagination.next_cursor` — we
+        normalize that to a top-level `next_cursor` for caller convenience.
+        Default sort is `start_desc` (newest meetings first).
+        """
         url = f"{self.base_url}/meetings"
-        
+
         params = {"limit": min(limit, 200)}
+        if sort:
+            params["sort"] = sort
         if cursor:
             params["cursor"] = cursor
-        
+
         async with httpx.AsyncClient(timeout=30.0) as client:
             try:
                 response = await client.get(url, params=params, headers=self.headers)
                 response.raise_for_status()
-                return response.json()
+                body = response.json()
+                # Normalize cursor location
+                pagination = body.get("pagination") or {}
+                next_cursor = pagination.get("next_cursor") or body.get("next_cursor")
+                return {
+                    "data": body.get("data", []),
+                    "next_cursor": next_cursor,
+                    "pagination": pagination,
+                }
             except httpx.HTTPError as e:
                 print(f"Attio API Error - list_meetings: {e}")
                 if hasattr(e, 'response') and e.response:
