@@ -145,26 +145,29 @@ export default function MeetingsHub() {
     }
   };
 
-  // Stats are GLOBAL (across all sources) — fetched from a separate API
-  // so they don't change when the user switches tabs.
+  // Stats are GLOBAL (across all sources, all time ranges) — fetched from a
+  // separate API so they don't change when the user switches tabs/time-range.
+  // The TOTAL here matches the sync banner; per-time-range breakdown is
+  // displayed separately.
   const fetchGlobalStats = async () => {
     try {
       const token = localStorage.getItem("admin_token") || localStorage.getItem("token");
       const headers = { Authorization: `Bearer ${token}` };
-      const [allRes, attioRes, ffRes] = await Promise.all([
-        axios.get(`${API}/meetings?limit=1`, { headers }),
-        axios.get(`${API}/meetings/attio?limit=1`, { headers }),
-        axios.get(`${API}/meetings/fireflies?limit=1`, { headers }),
+      const tr = "time_range=all";
+      const [allRes, attioRes, ffRes, pastRes, upRes, recRes] = await Promise.all([
+        axios.get(`${API}/meetings?limit=1&${tr}`, { headers }),
+        axios.get(`${API}/meetings/attio?limit=1&${tr}`, { headers }),
+        axios.get(`${API}/meetings/fireflies?limit=1&${tr}`, { headers }),
+        axios.get(`${API}/meetings?limit=1&time_range=past`, { headers }),
+        axios.get(`${API}/meetings?limit=1&time_range=upcoming`, { headers }),
+        axios.get(`${API}/meetings?limit=1&${tr}&has_recording=true`, { headers }),
       ]);
-      // For "with recordings" do a fast filter call
-      const recRes = await axios.get(
-        `${API}/meetings?limit=1&has_recording=true`,
-        { headers }
-      );
       setStats({
         total: allRes.data.total || 0,
         attio: attioRes.data.total || 0,
         fireflies: ffRes.data.total || 0,
+        past: pastRes.data.total || 0,
+        upcoming: upRes.data.total || 0,
         with_recordings: recRes.data.total || 0,
       });
     } catch (error) {
@@ -271,12 +274,16 @@ export default function MeetingsHub() {
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-        <Card>
+        <Card data-testid="stat-total">
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-gray-500">Total Meetings</p>
                 <p className="text-2xl font-bold text-gray-900">{stats.total}</p>
+                <p className="text-[11px] text-gray-500 mt-0.5">
+                  <span className="text-gray-700 font-medium">{stats.past || 0}</span> past ·{" "}
+                  <span className="text-gray-700 font-medium">{stats.upcoming || 0}</span> upcoming
+                </p>
               </div>
               <Calendar className="w-8 h-8 text-blue-500" />
             </div>
@@ -289,6 +296,7 @@ export default function MeetingsHub() {
               <div>
                 <p className="text-sm text-gray-500">Attio CRM</p>
                 <p className="text-2xl font-bold text-gray-900">{stats.attio}</p>
+                <p className="text-[11px] text-gray-500 mt-0.5">all-time sync</p>
               </div>
               <Badge className="bg-blue-500">Attio</Badge>
             </div>
@@ -301,6 +309,7 @@ export default function MeetingsHub() {
               <div>
                 <p className="text-sm text-gray-500">Fireflies AI</p>
                 <p className="text-2xl font-bold text-gray-900">{stats.fireflies}</p>
+                <p className="text-[11px] text-gray-500 mt-0.5">with transcripts</p>
               </div>
               <Badge className="bg-green-500">Fireflies</Badge>
             </div>
@@ -313,6 +322,7 @@ export default function MeetingsHub() {
               <div>
                 <p className="text-sm text-gray-500">With Recordings</p>
                 <p className="text-2xl font-bold text-gray-900">{stats.with_recordings}</p>
+                <p className="text-[11px] text-gray-500 mt-0.5">audio / video / deep-link</p>
               </div>
               <Video className="w-8 h-8 text-purple-500" />
             </div>
@@ -396,14 +406,19 @@ export default function MeetingsHub() {
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="grid w-full grid-cols-4">
-          <TabsTrigger value="all" data-testid="tab-all">All Meetings ({stats.total})</TabsTrigger>
+          <TabsTrigger value="all" data-testid="tab-all">
+            All Meetings
+            <span className="ml-2 text-xs text-gray-400">
+              ({filters.time_range === "all" ? stats.total : filters.time_range === "upcoming" ? stats.upcoming : stats.past})
+            </span>
+          </TabsTrigger>
           <TabsTrigger value="attio" data-testid="tab-attio">
             <Badge variant="outline" className="mr-2 bg-blue-50 text-blue-700 border-blue-300">Attio</Badge>
-            {stats.attio}
+            <span className="text-xs text-gray-400">{stats.attio}</span>
           </TabsTrigger>
           <TabsTrigger value="fireflies" data-testid="tab-fireflies">
             <Badge variant="outline" className="mr-2 bg-green-50 text-green-700 border-green-300">Fireflies</Badge>
-            {stats.fireflies}
+            <span className="text-xs text-gray-400">{stats.fireflies}</span>
           </TabsTrigger>
           <TabsTrigger value="timeline" data-testid="tab-timeline">
             <Calendar className="w-4 h-4 mr-2" />
