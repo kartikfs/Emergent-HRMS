@@ -1,61 +1,70 @@
-# PeopleHub HRMS — PRD
+# PeopleHub HRMS — PRD (canonical, Feb 2026)
 
-## Original Problem Statement
-Build a "Meetings & Recordings Hub" integrated into the PeopleHub HRMS that aggregates
-meeting data from Attio CRM and Fireflies AI into one unified view.
+> Full PRD also mirrored at `/app/PRD.md` for team-facing reference.
 
-### Core requirements
-1. Three source-aware tabs (All Meetings, Attio, Fireflies) with real data.
-2. Deduplication, keyword/semantic search, filters (date, participant).
-3. Background sync and on-demand transcript fetching.
-4. Action Items tracker + per-employee meeting profile.
-5. **Calendar Timeline view** (Month / Week / Day).
-6. **AI Chat** in transcript drawer to ask questions about each meeting (GPT-5.2).
-7. Latest-first ordering across all views.
-8. Present in a polished, principal-PM-grade UI.
+## 1. Product Overview
+PeopleHub HRMS is a full-stack HRMS unifying the hire-to-retire employee lifecycle with a Meetings & Recordings Intelligence layer that aggregates Attio CRM + Fireflies AI into one pane.
 
-## Personas
-- **Admin / HR** — sees all meetings org-wide, syncs data, manages action items.
-- **Employee** — sees only meetings they participated in, manages own action items.
+## 2. Personas
+- **Super Admin / HR** — org-wide access
+- **Manager** (role-flagged admin) — team-scoped
+- **Employee** — self-service only
 
-## Implemented (Feb 2026 session)
-- ✅ Admin & employee login (bcrypt) — `/login`, `/employee/login`
-- ✅ Attio CRM client (REST) — `attio_client.py` with batch record-name resolution
-- ✅ Fireflies AI client (GraphQL, free-tier safe) — `fireflies_client.py`
-- ✅ Meetings sync pipeline with deduplication — `meetings_service.py`
-- ✅ Meetings Hub UI with 4 tabs (All / Attio / Fireflies / Timeline) — `MeetingsHub.js`
-- ✅ Date-grouped All Meetings list (Today / Yesterday / This week / Earlier this month / Older)
-- ✅ Polished MeetingCard with participants avatars + indicator badges + linked-company chips
-- ✅ Month / Week / Day calendar timeline — `MeetingsTimeline.js`
-- ✅ Meeting drawer with Summary / Transcript / Actions / **AI Chat** — `MeetingDetailDrawer.js`
-- ✅ **AI Chat (GPT-5.2)** via Emergent Universal Key — `/api/meetings/{id}/chat`
-- ✅ Recording deep-links surfaced for Fireflies meetings
-- ✅ Sort latest → oldest across All / Attio / Fireflies / Timeline
-- ✅ Global stat cards (Total / Attio / Fireflies / With Recordings) — fetched independent of active tab
-- ✅ Sync resilience — per-row try/except, partial-failure logging, MongoDB upsert tolerant
-- ✅ Single-meeting GET `/api/meetings/{id}` for shareable links + Copy-link button in drawer
-- ✅ Employee Meeting Profile UI on `/employees/:id`
-- ✅ Dashboard trends endpoint fixed (was returning literal `null`)
-- ✅ **Attio data enrichment**: meeting `description` surfaced as summary; linked companies & people resolved to display names; rendered as labelled chips in drawer + card.
-- ✅ **Fireflies data enrichment**: `action_items_list` parsed (handles both list-of-strings and multi-line markdown); shown inline in Summary tab + full list in Actions tab.
-- ✅ **Fireflies transcript on free tier**: `sentences` field now fetched (previously broken by `audio_url`/`analytics` co-fields that required Pro).
-- ✅ **Search** across title / summary / participants / topics / keywords / linked company names / linked contact names / action items — verified: BCG→8, Wordflex→1, Boston Consulting→6, Afore→13, Zoom→23.
+## 3. Third-Party Integrations
+- **Attio CRM** (`ATTIO_API_KEY`) — meetings, linked companies/contacts, transcripts. Cursor pagination, 2,800+ records.
+- **Fireflies AI** (`FIREFLIES_API_KEY`) — meetings + transcripts + action items. Free tier blocks `audio_url`, `video_url`, `host_email`, `analytics`.
+- **OpenAI GPT-5.2** via Emergent LLM Key — AI Chat over transcripts.
+- **MongoDB** (`MONGO_URL`) — primary datastore.
 
-## Backlog (P1 / P2)
-- P1 Employee Meeting Profile — show meetings on each employee's detail page (endpoint exists at `GET /api/employees/{id}/meetings`; UI not built yet).
-- P1 Standalone Action Items Tracker page (aggregated across all meetings).
-- P2 Global Cmd+K search.
-- P2 Semantic search (embedding-based) — currently keyword fallback only.
-- P2 GET `/api/meetings/{id}` single-meeting endpoint for shareable URLs.
-- P2 Fix dashboard "trends" null-deref console warning (unrelated to meetings hub).
-- P3 Real audio/video URLs from Fireflies — requires user upgrading to Fireflies Pro tier.
-- P3 Real Attio call-recordings — current data set has 0 recordings linked in Attio.
+## 4. Pages (28 routes)
+**Public:** `/`, `/login`, `/admin/signup`, `/employee/login`, `/employee/signup`
+**Admin:** `/dashboard`, `/employees`, `/employees/:id`, `/attendance`, `/leaves`, `/recruitment`, `/onboarding`, `/payroll`, `/performance`, `/org-structure`, `/user-management`, `/meetings` (flagship)
+**Employee Portal:** `/employee/portal`, `/employee/dashboard`, `/employee/profile`, `/employee/attendance`, `/employee/leaves`, `/employee/payslips`, `/employee/documents`, `/employee/meetings`
 
-## Known limitations
-- Fireflies free tier returns **403 paid_required** for `audio_url`, `video_url`, `host_email`, `analytics`, and full `sentences`. We compensate by exposing a deep-link to `https://app.fireflies.ai/view/<id>` so users can still open the recording in Fireflies.
-- Attio account has no `call_recordings` linked to any meeting — `has_recording=false` for all 200 Attio meetings.
+## 5. Meetings & Recordings Hub (Flagship)
+4 tabs: All · Attio · Fireflies · Timeline (Month/Week/Day)
+- Dedup by `(source, source_id)`; cursor-based background sync
+- Lazy-loaded recordings via `/api/meetings/{id}/recordings`
+- Full-text search across title/summary/participants/action items/companies
+- Detail Drawer: Summary · Transcript · Action Items · AI Chat (GPT-5.2, persisted)
+- Shareable deep-links (`/meetings?id=...`)
+- Employee email alias mapping + Unmapped Participants admin queue
 
-## Architecture
-- Backend: FastAPI (`/app/backend/server.py`) + MongoDB (`meetings_cache`, `meeting_transcripts`, `meeting_action_items`, `meeting_chat_messages`).
-- Frontend: React + Tailwind + shadcn/ui.
-- LLM: GPT-5.2 via `emergentintegrations.llm.chat.LlmChat`.
+## 6. Security & Auth
+- bcrypt(12) password hash · JWT HS256 24h expiry · role-scoped FastAPI deps
+- All secrets in `.env`; CORS via `CORS_ORIGINS`
+- Audit logs for admin/employee creation
+- **P1**: Migrate JWT from localStorage → httpOnly cookies
+- **Test creds**: see `/app/memory/test_credentials.md`
+
+## 7. Design System
+React 19 + Tailwind + shadcn/ui + Lucide + Sonner. Slate-900 / blue-600 / emerald / rose palette. Card-based, left-aligned, generous spacing. `data-testid` on all interactive elements.
+
+## 8. Architecture
+React SPA (3000) → FastAPI (8001) → MongoDB (motor) + Attio REST + Fireflies GraphQL + Emergent LLM (GPT-5.2). Kubernetes, supervisor-managed.
+
+## 9. Implemented (Feb 2026)
+- Admin & employee auth (bcrypt + JWT)
+- Attio (REST) + Fireflies (GraphQL) clients with free-tier safety
+- Meetings sync + dedup pipeline
+- 4-tab Meetings Hub UI with date-grouped feed
+- Month/Week/Day Calendar Timeline
+- Meeting drawer with Summary / Transcript / Actions / AI Chat
+- AI Chat via GPT-5.2 (Emergent Universal Key), persisted per meeting
+- Shareable deep-links + Copy-link button
+- Lazy-loaded recordings (event-loop safe)
+- Employee email alias mapping + Unmapped Participants panel
+- Global stat cards (Total / Attio / Fireflies / With Recordings) — independent of active tab
+- Sync resilience: per-row try/except, partial-failure logging
+- Search across title/summary/participants/topics/keywords/linked companies/contacts/action items
+- Full HRMS modules: employees, attendance, leaves, recruitment, onboarding, payroll, performance, org-structure, user-management
+
+## 10. Roadmap
+**P0** — Verify Stat Cards UI fix on `/meetings`
+**P1** — JWT → httpOnly cookies; Standalone Action Items Tracker page; Employee Meeting Profile in Employee Portal
+**P2** — Split `MeetingDetailDrawer.js`; refactor `sync_meetings()`; `/healthz` + admin status badge; Cmd+K global search; semantic search (embeddings); pre-commit hooks (ruff + eslint)
+**P3** — Real audio/video URLs (requires Fireflies Pro); Real Attio call-recordings (data dependent); React Native mobile app
+
+## 11. Known Limitations
+- Fireflies free tier returns 403 paid_required for audio/video/host_email/analytics — we compensate with `https://app.fireflies.ai/view/<id>` deep-links.
+- Attio account currently has 0 `call_recordings` linked — `has_recording=false` for all 200 Attio meetings.
